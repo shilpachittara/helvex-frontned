@@ -1,0 +1,856 @@
+"use client";
+
+import { useSession } from "next-auth/react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  createApiKey,
+  fetchBalances,
+  fetchWalletProfile,
+  listApiKeys,
+  listDeposits,
+  listTransfers,
+  listWithdrawals,
+  onboardAccount,
+  prepareDeposit,
+  requestWithdrawal,
+  revokeApiKey,
+  sendTransfer,
+  type ApiKeyScope,
+  type ApiKeyView,
+  type BalanceView,
+  type DepositView,
+  type Instrument,
+  type TransferView,
+  type WalletProfile,
+  type WithdrawalView,
+} from "../../../lib/api";
+import { isValidAmount } from "../../../lib/amount";
+import { formatAmount } from "../../../lib/format-amount";
+import { useWallet } from "../../../lib/wallet/WalletProvider";
+
+const INSTRUMENTS: Instrument[] = ["CC", "CBTC", "USDCX"];
+const SCOPES: ApiKeyScope[] = ["read", "maker", "solver", "withdraw", "transfer"];
+
+function newIdempotencyKey(): string {
+  return crypto.randomUUID().replace(/-/g, "");
+}
+
+type Notice = { type: "success" | "error"; text: string } | null;
+
+export default function AccountPage() {
+  const { data: session } = useSession();
+  const { transfer, kind: walletKind, wallet } = useWallet();
+  const email = session?.user.email ?? null;
+
+  const [profile, setProfile] = useState<WalletProfile | null>(null);
+  const [appParty, setAppParty] = useState<string | null>(null);
+  const [balances, setBalances] = useState<BalanceView[]>([]);
+  const [deposits, setDeposits] = useState<DepositView[]>([]);
+  const [withdrawals, setWithdrawals] = useState<WithdrawalView[]>([]);
+  const [transfers, setTransfers] = useState<TransferView[]>([]);
+  const [apiKeys, setApiKeys] = useState<ApiKeyView[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activating, setActivating] = useState(false);
+  const [notice, setNotice] = useState<Notice>(null);
+
+  const loadProfile = useCallback(async () => {
+    if (!email) return;
+    const p = await fetchWalletProfile(email);
+    setProfile(p);
+    setAppParty(p.appPartyId);
+    return p;
+  }, [email]);
+
+  const loadAccountData = useCallback(async (party: string) => {
+    // Use allSettled so one failing section doesn't blank the others, but DON'T
+    // silently substitute empty data on failure — that could show "no balances"
+    // during an auth/outage error and make a funded user think they have zero.
+    const [b, d, w, t, k] = await Promise.allSettled([
+      fetchBalances(party),
+      listDeposits(party),
+      listWithdrawals(party),
+      listTransfers(party),
+      listApiKeys(party),
+    ]);
+    if (b.status === "fulfilled") setBalances(b.value.balances);
+    if (d.status === "fulfilled") setDeposits(d.value.deposits);
+    if (w.status === "fulfilled") setWithdrawals(w.value.withdrawals);
+    if (t.status === "fulfilled") setTransfers(t.value.transfers);
+    if (k.status === "fulfilled") setApiKeys(k.value.keys);
+    if ([b, d, w, t, k].some((r) => r.status === "rejected")) {
+      setNotice({
+        type: "error",
+        text: "Some account data could not be loaded. Displayed balances/history may be incomplete — refresh to retry.",
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    void (async () => {
+      try {
+        const p = await loadProfile();
+        if (!cancelled && p?.appPartyId) {
+          await loadAccountData(p.appPartyId);
+        }
+      } catch (err) {
+        // The profile endpoint returns a record (with a null appPartyId) for
+        // brand-new users, so a thrown error is a real failure — surface it
+        // instead of silently showing the "activate account" state.
+        if (!cancelled) {
+          setNotice({
+            type: "error",
+            text: err instanceof Error ? err.message : "Could not load your account.",
+          });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadProfile, loadAccountData]);
+
+  const refresh = useCallback(async () => {
+    if (appParty) await loadAccountData(appParty);
+  }, [appParty, loadAccountData]);
+
+  async function activate() {
+    if (!email || activating) return;
+    setActivating(true);
+    setNotice(null);
+    try {
+      const { account } = await onboardAccount(email, profile?.loopPartyId ?? undefined);
+      setAppParty(account.appPartyId);
+      await loadProfile();
+      await loadAccountData(account.appPartyId);
+      setNotice({ type: "success", text: "Trading account activated." });
+    } catch (err) {
+      setNotice({ type: "error", text: err instanceof Error ? err.message : "Activation failed" });
+    } finally {
+      setActivating(false);
+    }
+  }
+
+  return (
+    <>
+      <section className="hero-premium hero-compact">
+        <div className="hero-premium-content">
+          <span className="hero-eyebrow">Account · Custody</span>
+          <h1>Deposit, trade, withdraw</h1>
+          <p>
+            Deposit from your Loop wallet into your app party on our validator, trade with low
+            latency, and withdraw back to Loop. The ledger is the source of truth.
+          </p>
+        </div>
+      </section>
+
+      {notice && (
+        <div className={`alert alert-${notice.type === "success" ? "success" : "error"}`}>
+          {notice.text}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="empty-state empty-state-premium">
+          <span className="spinner" /> Loading account…
+        </div>
+      ) : !appParty ? (
+        <section className="panel panel-glass">
+          <div className="panel-header">
+            <div>
+              <h2 className="panel-title">Activate trading account</h2>
+              <p className="panel-subtitle">
+                Provision an app party on our validator to deposit and trade.
+              </p>
+            </div>
+          </div>
+          <div className="account-identity">
+            <IdRow label="Login" value={email ?? "—"} />
+            <IdRow label="Linked Loop party" value={profile?.loopPartyId ?? profile?.cantonPartyId ?? "Not linked"} />
+          </div>
+          {!profile?.loopPartyId && !profile?.cantonPartyId && (
+            <p className="field-hint">
+              Connect your Loop wallet first so withdrawals can be locked to your address.
+            </p>
+          )}
+          <button
+            type="button"
+            className="btn btn-primary btn-glow"
+            onClick={activate}
+            disabled={activating}
+          >
+            {activating ? "Activating…" : "Activate trading account"}
+          </button>
+        </section>
+      ) : (
+        <>
+          <section className="panel panel-glass">
+            <div className="panel-header">
+              <div>
+                <h2 className="panel-title">Identity</h2>
+                <p className="panel-subtitle">Your parties</p>
+              </div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={refresh}>
+                Refresh
+              </button>
+            </div>
+            <div className="account-identity">
+              <IdRow label="App party (trading)" value={appParty} mono />
+              <IdRow
+                label="Linked Loop party (withdraw destination)"
+                value={profile?.loopPartyId ?? profile?.cantonPartyId ?? "Not linked"}
+                mono
+              />
+              {profile?.sponsoredCc && parseFloat(profile.sponsoredCc) > 0 && (
+                <IdRow label="Traffic sponsored" value={`${formatAmount(profile.sponsoredCc)} CC`} />
+              )}
+            </div>
+            {profile?.accountStatus && profile.accountStatus !== "ACTIVE" && (
+              <div className="alert alert-error">
+                Account {profile.accountStatus.toLowerCase()} — trading and withdrawals are paused.
+                Contact support.
+              </div>
+            )}
+          </section>
+
+          <BalancesPanel balances={balances} />
+
+          <div className="grid-2 grid-2-premium">
+            <DepositPanel
+              appParty={appParty}
+              loopReady={walletKind === "loop" && Boolean(wallet?.partyId)}
+              transfer={transfer}
+              onDone={async (n) => {
+                setNotice(n);
+                await refresh();
+              }}
+            />
+            <WithdrawPanel
+              appParty={appParty}
+              destination={profile?.loopPartyId ?? profile?.cantonPartyId ?? null}
+              onDone={async (n) => {
+                setNotice(n);
+                await refresh();
+              }}
+            />
+          </div>
+
+          <SendPanel
+            appParty={appParty}
+            onDone={async (n) => {
+              setNotice(n);
+              await refresh();
+            }}
+          />
+
+          <DepositsHistory deposits={deposits} />
+
+          <WithdrawalsHistory withdrawals={withdrawals} />
+
+          <TransfersHistory transfers={transfers} />
+
+          <ApiKeysPanel
+            appParty={appParty}
+            keys={apiKeys}
+            onChanged={refresh}
+            setNotice={setNotice}
+          />
+        </>
+      )}
+    </>
+  );
+}
+
+function IdRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="account-id-row">
+      <span className="account-id-label">{label}</span>
+      <span className={mono ? "input-mono account-id-value" : "account-id-value"}>{value}</span>
+    </div>
+  );
+}
+
+function BalancesPanel({ balances }: { balances: BalanceView[] }) {
+  return (
+    <section className="panel panel-glass">
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">Trading balances</h2>
+          <p className="panel-subtitle">On-ledger holdings on your app party</p>
+        </div>
+      </div>
+      {balances.length === 0 ? (
+        <div className="empty-state empty-state-premium">
+          <div className="empty-state-icon">◎</div>
+          <p>No balances yet</p>
+          <span className="empty-state-sub">Deposit from Loop to start trading</span>
+        </div>
+      ) : (
+        <div className="balance-grid">
+          {balances.map((b) => (
+            <div key={b.instrument} className="balance-card">
+              <span className="balance-symbol">{b.symbol}</span>
+              <span className="balance-available">{formatAmount(b.available)}</span>
+              <span className="balance-sub">
+                {formatAmount(b.total)} total · {formatAmount(b.locked)} locked
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DepositPanel({
+  appParty,
+  loopReady,
+  transfer,
+  onDone,
+}: {
+  appParty: string;
+  loopReady: boolean;
+  transfer: (input: { to: string; instrumentId: string; amount: string }) => Promise<void>;
+  onDone: (n: Notice) => void;
+}) {
+  const [instrument, setInstrument] = useState<Instrument>("CC");
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [depositTo, setDepositTo] = useState<string | null>(null);
+
+  async function submit() {
+    if (!isValidAmount(amount)) {
+      onDone({ type: "error", text: "Enter a valid amount greater than zero." });
+      return;
+    }
+    setBusy(true);
+    try {
+      const { depositTo: to } = await prepareDeposit(appParty, {
+        instrument,
+        amount,
+        idempotencyKey: newIdempotencyKey(),
+      });
+      setDepositTo(to);
+      if (loopReady) {
+        try {
+          await transfer({ to, instrumentId: instrument, amount });
+          onDone({ type: "success", text: "Deposit transfer submitted from Loop." });
+        } catch (err) {
+          onDone({
+            type: "error",
+            text:
+              err instanceof Error
+                ? `Prepared. Loop transfer failed: ${err.message}. Send ${amount} ${instrument} to ${to} manually.`
+                : "Loop transfer failed.",
+          });
+        }
+      } else {
+        onDone({
+          type: "success",
+          text: `Deposit prepared. Send ${amount} ${instrument} to ${to} from Loop.`,
+        });
+      }
+      setAmount("");
+    } catch (err) {
+      onDone({ type: "error", text: err instanceof Error ? err.message : "Deposit failed" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel panel-glass">
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">Deposit</h2>
+          <p className="panel-subtitle">Loop → app party</p>
+        </div>
+      </div>
+      <div className="field">
+        <label htmlFor="dep-instrument">Token</label>
+        <select
+          id="dep-instrument"
+          value={instrument}
+          onChange={(e) => setInstrument(e.target.value as Instrument)}
+        >
+          {INSTRUMENTS.map((i) => (
+            <option key={i} value={i}>
+              {i}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label htmlFor="dep-amount">Amount</label>
+        <input
+          id="dep-amount"
+          inputMode="decimal"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="0.0"
+          className="input-mono"
+        />
+      </div>
+      <button
+        type="button"
+        className="btn btn-primary"
+        onClick={submit}
+        disabled={busy || !isValidAmount(amount)}
+      >
+        {busy ? <span className="spinner" /> : loopReady ? "Deposit from Loop" : "Prepare deposit"}
+      </button>
+      {depositTo && (
+        <p className="field-hint">
+          Deposit destination: <span className="input-mono">{depositTo}</span>
+        </p>
+      )}
+    </section>
+  );
+}
+
+function WithdrawPanel({
+  appParty,
+  destination,
+  onDone,
+}: {
+  appParty: string;
+  destination: string | null;
+  onDone: (n: Notice) => void;
+}) {
+  const [instrument, setInstrument] = useState<Instrument>("CC");
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!isValidAmount(amount)) {
+      onDone({ type: "error", text: "Enter a valid amount greater than zero." });
+      return;
+    }
+    if (!destination) {
+      onDone({ type: "error", text: "Link a Loop wallet before withdrawing." });
+      return;
+    }
+    setBusy(true);
+    try {
+      await requestWithdrawal(appParty, {
+        instrument,
+        amount,
+        idempotencyKey: newIdempotencyKey(),
+      });
+      onDone({ type: "success", text: "Withdrawal requested. Funds return to your Loop party." });
+      setAmount("");
+    } catch (err) {
+      onDone({ type: "error", text: err instanceof Error ? err.message : "Withdrawal failed" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel panel-glass">
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">Withdraw</h2>
+          <p className="panel-subtitle">App party → Loop</p>
+        </div>
+      </div>
+      <div className="field">
+        <label htmlFor="wd-instrument">Token</label>
+        <select
+          id="wd-instrument"
+          value={instrument}
+          onChange={(e) => setInstrument(e.target.value as Instrument)}
+        >
+          {INSTRUMENTS.map((i) => (
+            <option key={i} value={i}>
+              {i}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label htmlFor="wd-amount">Amount</label>
+        <input
+          id="wd-amount"
+          inputMode="decimal"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="0.0"
+          className="input-mono"
+        />
+      </div>
+      <button
+        type="button"
+        className="btn btn-primary"
+        onClick={submit}
+        disabled={busy || !isValidAmount(amount) || !destination}
+      >
+        {busy ? <span className="spinner" /> : "Request withdrawal"}
+      </button>
+      <p className="field-hint">
+        Destination (locked):{" "}
+        <span className="input-mono">{destination ?? "Link a Loop wallet first"}</span>
+      </p>
+    </section>
+  );
+}
+
+function SendPanel({
+  appParty,
+  onDone,
+}: {
+  appParty: string;
+  onDone: (n: Notice) => void;
+}) {
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [instrument, setInstrument] = useState<Instrument>("CC");
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!recipientEmail) {
+      onDone({ type: "error", text: "Enter a recipient email." });
+      return;
+    }
+    if (!isValidAmount(amount)) {
+      onDone({ type: "error", text: "Enter a valid amount greater than zero." });
+      return;
+    }
+    setBusy(true);
+    try {
+      await sendTransfer(appParty, {
+        recipientEmail: recipientEmail.trim().toLowerCase(),
+        instrument,
+        amount,
+        idempotencyKey: newIdempotencyKey(),
+      });
+      onDone({ type: "success", text: `Sent ${amount} ${instrument} to ${recipientEmail}.` });
+      setAmount("");
+      setRecipientEmail("");
+    } catch (err) {
+      onDone({ type: "error", text: err instanceof Error ? err.message : "Transfer failed" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel panel-glass">
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">Send to a user</h2>
+          <p className="panel-subtitle">Instant, fee-free transfer to another Intent Swap account</p>
+        </div>
+      </div>
+      <div className="field">
+        <label htmlFor="xfer-email">Recipient email</label>
+        <input
+          id="xfer-email"
+          type="email"
+          value={recipientEmail}
+          onChange={(e) => setRecipientEmail(e.target.value)}
+          placeholder="recipient@example.com"
+        />
+      </div>
+      <div className="grid-2">
+        <div className="field">
+          <label htmlFor="xfer-instrument">Token</label>
+          <select
+            id="xfer-instrument"
+            value={instrument}
+            onChange={(e) => setInstrument(e.target.value as Instrument)}
+          >
+            {INSTRUMENTS.map((i) => (
+              <option key={i} value={i}>
+                {i}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="xfer-amount">Amount</label>
+          <input
+            id="xfer-amount"
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0.0"
+            className="input-mono"
+          />
+        </div>
+      </div>
+      <button
+        type="button"
+        className="btn btn-primary"
+        onClick={submit}
+        disabled={busy || !isValidAmount(amount) || !recipientEmail}
+      >
+        {busy ? <span className="spinner" /> : "Send"}
+      </button>
+      <p className="field-hint">
+        Both accounts settle on our validator, so transfers are instant with no Loop withdrawal fee.
+        Daily limits apply based on your KYC tier.
+      </p>
+    </section>
+  );
+}
+
+function TransfersHistory({ transfers }: { transfers: TransferView[] }) {
+  if (transfers.length === 0) return null;
+  return (
+    <section className="panel panel-glass">
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">Recent transfers</h2>
+          <p className="panel-subtitle">{transfers.length} total</p>
+        </div>
+      </div>
+      <div className="intent-list">
+        {transfers.slice(0, 10).map((t) => {
+          const counterparty = t.direction === "OUT" ? t.recipientAppParty : t.senderAppParty;
+          return (
+            <article key={t.id} className="intent-card">
+              <div className="intent-card-top">
+                <div className="intent-amounts">
+                  {t.direction === "OUT" ? "−" : "+"}
+                  {formatAmount(t.amount)} {t.instrument}
+                </div>
+                <span className={`status-badge status-${t.status.toLowerCase()}`}>{t.status}</span>
+              </div>
+              <div className="intent-meta">
+                <span>{t.direction === "OUT" ? "To" : "From"}</span>
+                <span className="intent-id" title={counterparty ?? ""}>
+                  {counterparty ? `${counterparty.slice(0, 16)}…` : "—"}
+                </span>
+                <span>{new Date(t.createdAt).toLocaleString()}</span>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function WithdrawalsHistory({ withdrawals }: { withdrawals: WithdrawalView[] }) {
+  if (withdrawals.length === 0) return null;
+  return (
+    <section className="panel panel-glass">
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">Recent withdrawals</h2>
+          <p className="panel-subtitle">{withdrawals.length} total · destination-locked</p>
+        </div>
+      </div>
+      <div className="intent-list">
+        {withdrawals.slice(0, 10).map((w) => (
+          <article key={w.id} className="intent-card">
+            <div className="intent-card-top">
+              <div className="intent-amounts">
+                −{formatAmount(w.amount)} {w.instrument}
+              </div>
+              <span className={`status-badge status-${w.status.toLowerCase()}`}>{w.status}</span>
+            </div>
+            <div className="intent-meta">
+              <span>To</span>
+              <span className="intent-id" title={w.destLoopParty ?? ""}>
+                {w.destLoopParty ? `${w.destLoopParty.slice(0, 16)}…` : "—"}
+              </span>
+              <span>{new Date(w.createdAt).toLocaleString()}</span>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DepositsHistory({ deposits }: { deposits: DepositView[] }) {
+  if (deposits.length === 0) return null;
+  return (
+    <section className="panel panel-glass">
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">Recent deposits</h2>
+          <p className="panel-subtitle">{deposits.length} total</p>
+        </div>
+      </div>
+      <div className="intent-list">
+        {deposits.slice(0, 10).map((d) => (
+          <article key={d.id} className="intent-card">
+            <div className="intent-card-top">
+              <div className="intent-amounts">
+                {formatAmount(d.amount)} {d.instrument}
+              </div>
+              <span className={`status-badge status-${d.status.toLowerCase()}`}>{d.status}</span>
+            </div>
+            <div className="intent-meta">
+              <span>{new Date(d.createdAt).toLocaleString()}</span>
+              {d.ledgerTxId && (
+                <span className="intent-id" title={d.ledgerTxId}>
+                  {d.ledgerTxId.slice(0, 10)}…
+                </span>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ApiKeysPanel({
+  appParty,
+  keys,
+  onChanged,
+  setNotice,
+}: {
+  appParty: string;
+  keys: ApiKeyView[];
+  onChanged: () => Promise<void>;
+  setNotice: (n: Notice) => void;
+}) {
+  const [label, setLabel] = useState("");
+  const [selectedScopes, setSelectedScopes] = useState<ApiKeyScope[]>(["read", "maker"]);
+  const [marketMaker, setMarketMaker] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [created, setCreated] = useState<{ keyId: string; secret: string } | null>(null);
+
+  function toggleScope(scope: ApiKeyScope) {
+    setSelectedScopes((prev) =>
+      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope],
+    );
+  }
+
+  async function create() {
+    if (selectedScopes.length === 0) {
+      setNotice({ type: "error", text: "Select at least one scope." });
+      return;
+    }
+    setBusy(true);
+    setCreated(null);
+    try {
+      const res = await createApiKey(appParty, {
+        label: label || undefined,
+        scopes: selectedScopes,
+        rateTier: marketMaker ? "market_maker" : "default",
+      });
+      setCreated({ keyId: res.keyId, secret: res.secret });
+      setLabel("");
+      await onChanged();
+    } catch (err) {
+      setNotice({ type: "error", text: err instanceof Error ? err.message : "Key creation failed" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke(id: string) {
+    try {
+      await revokeApiKey(appParty, id);
+      await onChanged();
+      setNotice({ type: "success", text: "API key revoked." });
+    } catch (err) {
+      setNotice({ type: "error", text: err instanceof Error ? err.message : "Revoke failed" });
+    }
+  }
+
+  return (
+    <section className="panel panel-glass">
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">API keys</h2>
+          <p className="panel-subtitle">For bots & market makers (HMAC-signed)</p>
+        </div>
+      </div>
+
+      <div className="field">
+        <label htmlFor="key-label">Label</label>
+        <input
+          id="key-label"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="Trading bot v1"
+        />
+      </div>
+
+      <div className="field">
+        <label>Scopes</label>
+        <div className="scope-row">
+          {SCOPES.map((s) => (
+            <label key={s} className="chip-checkbox">
+              <input
+                type="checkbox"
+                checked={selectedScopes.includes(s)}
+                onChange={() => toggleScope(s)}
+              />
+              <span>{s}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <label className="checkbox-row">
+        <input
+          type="checkbox"
+          checked={marketMaker}
+          onChange={(e) => setMarketMaker(e.target.checked)}
+        />
+        <span>Market-maker rate tier (higher limits)</span>
+      </label>
+
+      <button type="button" className="btn btn-primary" onClick={create} disabled={busy}>
+        {busy ? <span className="spinner" /> : "Create API key"}
+      </button>
+
+      {created && (
+        <div className="alert alert-success">
+          <strong>Save this secret now — it is shown only once.</strong>
+          <div className="key-reveal">
+            <div>
+              <span className="account-id-label">Key ID</span>
+              <span className="input-mono">{created.keyId}</span>
+            </div>
+            <div>
+              <span className="account-id-label">Secret</span>
+              <span className="input-mono">{created.secret}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {keys.length > 0 && (
+        <div className="intent-list" style={{ marginTop: "1rem" }}>
+          {keys.map((k) => (
+            <article key={k.id} className="intent-card">
+              <div className="intent-card-top">
+                <div>
+                  <div className="intent-amounts">{k.label ?? k.keyId}</div>
+                  <div className="field-hint">
+                    {k.scopes.join(", ")} · {k.rateTier ?? "default"}
+                  </div>
+                </div>
+                {k.active ? (
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => revoke(k.id)}>
+                    Revoke
+                  </button>
+                ) : (
+                  <span className="status-badge">Revoked</span>
+                )}
+              </div>
+              <div className="intent-meta">
+                <span className="input-mono">{k.keyId}</span>
+                <span>
+                  {k.lastUsedAt ? `Used ${new Date(k.lastUsedAt).toLocaleDateString()}` : "Never used"}
+                </span>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}

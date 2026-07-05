@@ -1,0 +1,34 @@
+{
+  "name": "@intent-swap/web",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "node scripts/next-dev.mjs",
+    "build": "next build",
+    "start": "node scripts/next-start.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fivenorth/loop-sdk": "^0.12.2",
+    "@intent-swap/domain": "file:../backend/packages/domain",
+    "@next/env": "^15.1.2",
+    "next": "^15.1.2",
+    "next-auth": "5.0.0-beta.30",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss@<8.5.10": ">=8.5.10"
+    }
+  }
+}
