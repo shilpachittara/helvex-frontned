@@ -71,6 +71,9 @@ export default function HomePage() {
   const [maker, setMaker] = useState("maker::1220demo");
   const [appParty, setAppParty] = useState<string | null>(null);
   const [accountNotice, setAccountNotice] = useState<string | null>(null);
+  // X-7: mirror the authoritative backend freeze so we disable the action in the
+  // UI too (the server still rejects a frozen account's intents regardless).
+  const [accountFrozen, setAccountFrozen] = useState(false);
   const [pair, setPair] = useState<PairId>("CBTC_USDCX");
   const [sellAmount, setSellAmount] = useState("0.01");
   const [minBuyAmount, setMinBuyAmount] = useState("10");
@@ -94,6 +97,9 @@ export default function HomePage() {
     void fetchWalletProfile(email)
       .then((profile) => {
         if (cancelled) return;
+        setAccountFrozen(
+          profile.accountStatus != null && profile.accountStatus !== "ACTIVE",
+        );
         if (profile.appPartyId) {
           setAppParty(profile.appPartyId);
           setMaker(profile.appPartyId);
@@ -500,6 +506,7 @@ export default function HomePage() {
               loading ||
               quoteLoading ||
               pairs.length === 0 ||
+              accountFrozen ||
               (quote ? !quote.withinLimits : false)
             }
           >
@@ -512,6 +519,12 @@ export default function HomePage() {
               "Submit signed intent"
             )}
           </button>
+
+          {accountFrozen && (
+            <div className="alert alert-error">
+              Your account is not active — trading is paused. Contact support.
+            </div>
+          )}
 
           {message && (
             <div className={`alert alert-${message.type === "success" ? "success" : "error"}`}>

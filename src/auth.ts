@@ -26,6 +26,10 @@ const googleEnabled = Boolean(
 );
 
 const config = {
+  // trustHost is required for self-hosted (non-Vercel) deploys. The host-header
+  // injection risk it implies is neutralized by pinning AUTH_URL/NEXTAUTH_URL in
+  // production (enforced at boot by assertFrontendProductionConfig): when set,
+  // NextAuth derives callback/redirect URLs from that origin, not the Host header.
   trustHost: true,
   pages: { signIn: "/login" },
   session: { strategy: "jwt" },

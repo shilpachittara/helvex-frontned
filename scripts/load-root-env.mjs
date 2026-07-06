@@ -96,6 +96,74 @@ export function getResolvedEnv() {
   return applyDerivedEnv({ ...readRootEnvFile() });
 }
 
+const FRONTEND_MIN_SECRET_LEN = 24;
+const FRONTEND_KNOWN_PLACEHOLDERS = new Set([
+  "dev-internal-proxy-secret-change-me",
+  "dev-auth-secret-change-me-in-production",
+  "dev-auth-secret-change-in-production",
+  "change-me",
+  "changeme",
+  "secret",
+  "password",
+]);
+
+function isWeakFrontendSecret(v) {
+  if (!v) return true;
+  const s = String(v).trim();
+  return s.length < FRONTEND_MIN_SECRET_LEN || FRONTEND_KNOWN_PLACEHOLDERS.has(s.toLowerCase());
+}
+
+/**
+ * Fail-closed boot check for production runtime (frontend audit #4, #5 + X-4).
+ * Runs only at server start (`next start`), NOT during `next build` — build
+ * environments legitimately lack runtime secrets. Throws with an actionable list.
+ */
+export function assertFrontendProductionConfig(env = process.env) {
+  if (env.NODE_ENV !== "production") return;
+  // Skip the compile phase; only enforce when actually serving.
+  if (env.NEXT_PHASE === "phase-production-build") return;
+
+  const errors = [];
+  // #4 — secrets must be strong and not the shipped placeholders.
+  if (isWeakFrontendSecret(env.AUTH_SECRET)) {
+    errors.push(
+      "AUTH_SECRET is missing, too short (<24 chars), or a known placeholder. A guessable value lets an attacker forge NextAuth session JWTs (account takeover).",
+    );
+  }
+  const proxySecret = env.INTERNAL_PROXY_SECRET || env.SESSION_SECRET;
+  if (isWeakFrontendSecret(proxySecret)) {
+    errors.push(
+      "INTERNAL_PROXY_SECRET (or SESSION_SECRET) is missing, too short, or a known placeholder. It signs the proxy identity/geo the backend trusts; a weak value lets anyone impersonate users and forge their region.",
+    );
+  }
+  // #5 — pin the canonical URL so callback/redirect derivation never trusts the
+  // inbound Host header (host-header injection → poisoned OAuth callback/links).
+  if (!(env.AUTH_URL || env.NEXTAUTH_URL)) {
+    errors.push(
+      "AUTH_URL (or NEXTAUTH_URL) must be set in production so NextAuth derives callback/redirect URLs from a pinned origin, not the attacker-influenceable Host header.",
+    );
+  }
+  // X-4 — never ship the forgeable dev signer on mainnet.
+  if ((env.NEXT_PUBLIC_CANTON_NETWORK ?? "").toLowerCase() === "mainnet") {
+    if ((env.NEXT_PUBLIC_WALLET_PROVIDER ?? "dev").toLowerCase() !== "loop") {
+      errors.push(
+        "NEXT_PUBLIC_WALLET_PROVIDER must be 'loop' on mainnet. The 'dev' signer produces a forgeable dev:<sha256> value with no cryptographic authorization.",
+      );
+    }
+    if ((env.INTENT_SIGNATURE_MODE ?? "").toLowerCase() === "dev") {
+      errors.push("INTENT_SIGNATURE_MODE must not be 'dev' on mainnet (use 'loop').");
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new Error(
+      "Refusing to start the frontend in production due to insecure configuration:\n" +
+        errors.map((e, i) => `  ${i + 1}. ${e}`).join("\n") +
+        "\n\nFix these in the environment (see frontend/.env.example), then restart.",
+    );
+  }
+}
+
 /** Load root `.env` (+ derived defaults) into process.env. */
 export function applyRootEnv(options = {}) {
   const { override = false } = options;
@@ -105,6 +173,7 @@ export function applyRootEnv(options = {}) {
       process.env[key] = val;
     }
   }
+  assertFrontendProductionConfig(process.env);
   return values;
 }
 

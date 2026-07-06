@@ -27,8 +27,27 @@ const nextConfig = {
     ...nextPublicEnvKeys(env),
   },
   async headers() {
-    // Defense-in-depth response headers. CSP is intentionally conservative but
-    // allows the inline styles/scripts Next.js needs; tighten with nonces later.
+    const isProd = process.env.NODE_ENV === "production";
+
+    // script-src: 'unsafe-eval' is only needed for dev HMR, so drop it in
+    // production (removes a whole class of eval-based XSS). 'unsafe-inline' is
+    // still required because Next injects inline hydration/bootstrap scripts and
+    // we don't yet emit per-request nonces (see NONCE follow-up in
+    // docs/SECURITY_AUDIT.md — needs a middleware-generated nonce + `strict-dynamic`,
+    // verified against the rendered app before enabling).
+    const scriptSrc = isProd
+      ? "script-src 'self' 'unsafe-inline'"
+      : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
+
+    // connect-src: same-origin covers all API traffic (the app talks to the
+    // backend only through the same-origin /api proxy). The Loop wallet SDK may
+    // reach external origins, so operators can widen this with a SPACE-separated
+    // allowlist instead of the broad `https:`. Defaults stay permissive in dev.
+    const extraConnect = (process.env.CSP_CONNECT_SRC ?? "").trim();
+    const connectSrc = isProd
+      ? `connect-src 'self'${extraConnect ? ` ${extraConnect}` : " https:"}`
+      : "connect-src 'self' https: ws: wss:";
+
     const securityHeaders = [
       { key: "X-Frame-Options", value: "DENY" },
       { key: "X-Content-Type-Options", value: "nosniff" },
@@ -42,16 +61,17 @@ const nextConfig = {
         value: [
           "default-src 'self'",
           "img-src 'self' data: https:",
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+          scriptSrc,
           "style-src 'self' 'unsafe-inline'",
-          "connect-src 'self' https:",
+          connectSrc,
           "frame-ancestors 'none'",
+          "object-src 'none'",
           "base-uri 'self'",
           "form-action 'self'",
         ].join("; "),
       },
     ];
-    if (process.env.NODE_ENV === "production") {
+    if (isProd) {
       securityHeaders.push({
         key: "Strict-Transport-Security",
         value: "max-age=63072000; includeSubDomains; preload",
