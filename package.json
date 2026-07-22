@@ -11,7 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@fivenorth/loop-sdk": "^0.12.2",
+    "@fivenorth/loop-sdk": "^0.13.2",
     "@intent-swap/domain": "file:../backend/packages/domain",
     "@next/env": "^15.1.2",
     "next": "^15.1.2",

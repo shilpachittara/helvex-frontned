@@ -215,6 +215,35 @@ export async function listDeposits(appParty: string): Promise<{ deposits: Deposi
   return api("/v1/deposits", { headers: partyHeaders(appParty) });
 }
 
+export interface PendingInboundDeposit {
+  contractId: string;
+  sender: string;
+  amount: string;
+  instrumentId: string;
+  symbol: string;
+  executeBefore?: string;
+}
+
+export interface AcceptPendingDepositsResult {
+  accepted: number;
+  failed: Array<{ contractId: string; amount: string; symbol: string; error: string }>;
+}
+
+export async function listPendingDeposits(
+  appParty: string,
+): Promise<{ pending: PendingInboundDeposit[] }> {
+  return api("/v1/deposits/pending", { headers: partyHeaders(appParty) });
+}
+
+export async function acceptPendingDeposits(
+  appParty: string,
+): Promise<AcceptPendingDepositsResult> {
+  return api("/v1/deposits/accept-pending", {
+    method: "POST",
+    headers: partyHeaders(appParty),
+  });
+}
+
 export async function requestWithdrawal(
   appParty: string,
   body: { instrument: Instrument; amount: string; idempotencyKey: string },
@@ -258,6 +287,21 @@ export async function createApiKey(
 
 export async function listApiKeys(appParty: string): Promise<{ keys: ApiKeyView[] }> {
   return api("/v1/keys", { headers: partyHeaders(appParty) });
+}
+
+/**
+ * Cancel an open maker intent. Intents are signed and cannot be edited — to
+ * change terms, cancel and submit a new one. Requires the caller's `maker`
+ * scope (same as submitting); cancelling returns the maker's locked funds.
+ */
+export async function cancelIntent(
+  appParty: string,
+  intentId: string,
+): Promise<{ intent: { intentId: string; status: string } }> {
+  return api(`/v1/intents/${encodeURIComponent(intentId)}/cancel`, {
+    method: "POST",
+    headers: partyHeaders(appParty),
+  });
 }
 
 export async function revokeApiKey(appParty: string, id: string): Promise<{ ok: boolean }> {
@@ -370,7 +414,7 @@ export async function fetchAdminKycRequests(
 export async function approveKycRequest(
   adminKey: string,
   id: string,
-  body: { cantonPartyId: string; role?: "MAKER" | "SOLVER" | "BOTH"; reviewNotes?: string },
+  body: { cantonPartyId?: string; role?: "MAKER" | "SOLVER" | "BOTH"; reviewNotes?: string },
 ): Promise<{ ok: boolean; email: string; setupToken: string; setupUrl: string }> {
   return apiAdmin(`/kyc/requests/${id}/approve`, adminKey, {
     method: "POST",

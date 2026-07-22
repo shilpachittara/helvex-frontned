@@ -151,7 +151,7 @@ function AccessBlocked({
           <p className="access-gate-meta">Detected region: {countryCode}</p>
         ) : null}
         <p className="access-gate-footnote">
-          Intent Swap is available only to approved jurisdictions and KYC-verified Canton parties.
+          Helvex is available only to approved jurisdictions and KYC-verified Canton parties.
         </p>
       </div>
     </div>

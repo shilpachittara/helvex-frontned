@@ -34,7 +34,6 @@ export default function KycRequestPage() {
   const [expectedMonthlyVolume, setExpectedMonthlyVolume] = useState("");
   const [automatedTrading, setAutomatedTrading] = useState(false);
   const [sourceOfFunds, setSourceOfFunds] = useState("");
-  const [requestedRole, setRequestedRole] = useState<"MAKER" | "SOLVER" | "BOTH">("MAKER");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -52,7 +51,8 @@ export default function KycRequestPage() {
         fullName,
         countryCode,
         profileType,
-        requestedRole,
+        // Every verified user can post and fill — no separate maker/solver accounts.
+        requestedRole: "BOTH",
         institution: isInstitutional
           ? {
               legalName,
@@ -100,7 +100,7 @@ export default function KycRequestPage() {
           </Link>
           <h1>Request access</h1>
           <p>
-            Intent Swap is permissioned. Submit KYC details for operator review. Only approved
+            Helvex is permissioned. Submit KYC details for operator review. Only approved
             users can create a password and sign in.
           </p>
         </div>
@@ -146,32 +146,19 @@ export default function KycRequestPage() {
               </select>
             </div>
             <div className="field">
-              <label htmlFor="kyc-role">Access type</label>
+              <label htmlFor="kyc-profile">Profile type</label>
               <select
-                id="kyc-role"
-                value={requestedRole}
-                onChange={(e) => setRequestedRole(e.target.value as "MAKER" | "SOLVER" | "BOTH")}
+                id="kyc-profile"
+                value={profileType}
+                onChange={(e) => setProfileType(e.target.value as ProfileType)}
               >
-                <option value="MAKER">Maker — submit swap intents</option>
-                <option value="SOLVER">Solver — fill intents</option>
-                <option value="BOTH">Both — make and solve</option>
+                {PROFILE_TYPES.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
               </select>
             </div>
-          </div>
-
-          <div className="field">
-            <label htmlFor="kyc-profile">Profile type</label>
-            <select
-              id="kyc-profile"
-              value={profileType}
-              onChange={(e) => setProfileType(e.target.value as ProfileType)}
-            >
-              {PROFILE_TYPES.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
           </div>
 
           {isInstitutional && (

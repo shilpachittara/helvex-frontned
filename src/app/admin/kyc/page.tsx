@@ -93,19 +93,21 @@ export default function AdminKycPage() {
   async function approve(request: KycRequestView) {
     if (actingId) return;
     const cantonPartyId = partyInputs[request.id]?.trim();
-    if (!cantonPartyId) {
-      setError("Canton party ID required to approve.");
+    if (cantonPartyId && !cantonPartyId.includes("::")) {
+      setError("Party ID must look like name::1220… — or leave blank (link via Connect Loop later).");
       return;
     }
     setError(null);
     setActingId(request.id);
     try {
       const result = await approveKycRequest(adminKey, request.id, {
-        cantonPartyId,
+        ...(cantonPartyId ? { cantonPartyId } : {}),
         role: request.requestedRole as "MAKER" | "SOLVER" | "BOTH",
       });
       setLastSetup(
-        `Approved ${result.email}. Setup link: ${window.location.origin}${result.setupUrl}`,
+        cantonPartyId
+          ? `Approved ${result.email}. Setup link: ${window.location.origin}${result.setupUrl}`
+          : `Approved ${result.email} (no Loop party yet — they Connect Loop after login). Setup: ${window.location.origin}${result.setupUrl}`,
       );
       await refresh();
     } catch (err) {
@@ -219,7 +221,7 @@ export default function AdminKycPage() {
                 <div className="kyc-admin-actions">
                   <input
                     type="text"
-                    placeholder="Canton party ID"
+                    placeholder="optional Loop party (or leave blank)"
                     value={partyInputs[request.id] ?? ""}
                     onChange={(e) =>
                       setPartyInputs((prev) => ({ ...prev, [request.id]: e.target.value }))

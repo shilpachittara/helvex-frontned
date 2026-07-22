@@ -93,9 +93,10 @@ function LoginForm() {
       <div className="login-visual">
         <div className="login-visual-inner">
           <div className="login-brand-large">
-            <span className="brand-mark brand-mark-lg">IS</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/helvex-mark.svg" alt="Helvex" width={52} height={52} className="brand-mark-img brand-mark-img-lg" />
             <div>
-              <h2>Intent Swap</h2>
+              <h2>{process.env.NEXT_PUBLIC_APP_NAME?.trim() || "Helvex"}</h2>
               <p>Institutional-grade RFQ on Canton Network</p>
             </div>
           </div>

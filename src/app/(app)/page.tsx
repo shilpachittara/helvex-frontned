@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
 import {
   api,
+  cancelIntent,
   fetchQuote,
   fetchWalletProfile,
   onboardAccount,
@@ -17,6 +18,11 @@ import type { PairId } from "../../lib/signing";
 import { PartyAccessBanner } from "../../components/AccessGate";
 import { LoopWalletBanner } from "../../components/WalletConnect";
 import { IntentProgress, StatusBadge } from "../../components/StatusBadge";
+import {
+  TradingBalancesStrip,
+  availableForSymbol,
+  useTradingBalances,
+} from "../../components/TradingBalances";
 
 interface PairInfo {
   id: PairId;
@@ -68,7 +74,6 @@ export default function HomePage() {
   const { data: session } = useSession();
   const { kind: walletKind, wallet, signIntent } = useWallet();
   const [pairs, setPairs] = useState<PairInfo[]>([]);
-  const [maker, setMaker] = useState("maker::1220demo");
   const [appParty, setAppParty] = useState<string | null>(null);
   const [accountNotice, setAccountNotice] = useState<string | null>(null);
   // X-7: mirror the authoritative backend freeze so we disable the action in the
@@ -84,9 +89,16 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [activating, setActivating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(
     null,
   );
+  const {
+    balances,
+    loading: balancesLoading,
+    error: balancesError,
+    refresh: refreshBalances,
+  } = useTradingBalances(appParty);
 
   // Maker is the user's app (trading) party hosted on our validator, resolved
   // from the verified profile. Falls back to the linked Loop / session party.
@@ -102,22 +114,23 @@ export default function HomePage() {
         );
         if (profile.appPartyId) {
           setAppParty(profile.appPartyId);
-          setMaker(profile.appPartyId);
           setAccountNotice(null);
         } else {
+          // Never show Loop/canton party here — trading party is only the
+          // validator-hosted app party after Activate.
+          setAppParty(null);
           setAccountNotice(
             "No trading account yet — activate one on the Account page to start trading.",
           );
-          if (profile.cantonPartyId) setMaker(profile.cantonPartyId);
         }
       })
       .catch(() => {
-        if (!cancelled && session?.user.cantonPartyId) setMaker(session.user.cantonPartyId);
+        if (!cancelled) setAppParty(null);
       });
     return () => {
       cancelled = true;
     };
-  }, [session?.user.email, session?.user.cantonPartyId]);
+  }, [session?.user.email]);
 
   const selectedPair = pairs.find((p) => p.id === pair);
 
@@ -165,6 +178,27 @@ export default function HomePage() {
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const cancelIntentHandler = useCallback(
+    async (intentId: string) => {
+      if (!appParty) return;
+      setCancellingId(intentId);
+      setMessage(null);
+      try {
+        await cancelIntent(appParty, intentId);
+        setMessage({ type: "success", text: "Intent cancelled — locked funds returned." });
+        await Promise.all([refreshIntents(), refreshBalances()]);
+      } catch (err) {
+        setMessage({
+          type: "error",
+          text: err instanceof Error ? err.message : "Failed to cancel intent",
+        });
+      } finally {
+        setCancellingId(null);
+      }
+    },
+    [appParty, refreshIntents, refreshBalances],
+  );
 
   useEffect(() => {
     void refreshIntents();
@@ -270,7 +304,7 @@ export default function HomePage() {
         body: JSON.stringify({ ...payload, signature }),
       });
       setMessage({ type: "success", text: "Intent submitted — solvers are now quoting." });
-      await refreshIntents();
+      await Promise.all([refreshIntents(), refreshBalances()]);
     } catch (err) {
       setMessage({
         type: "error",
@@ -289,11 +323,14 @@ export default function HomePage() {
     setActivating(true);
     setMessage(null);
     try {
-      const { account } = await onboardAccount(email);
+      const profile = await fetchWalletProfile(email).catch(() => null);
+      const { account } = await onboardAccount(
+        email,
+        profile?.loopPartyId ?? profile?.cantonPartyId ?? undefined,
+      );
       setAppParty(account.appPartyId);
-      setMaker(account.appPartyId);
       setAccountNotice(null);
-      setMessage({ type: "success", text: "Trading account activated." });
+      setMessage({ type: "success", text: `Trading account activated · ${account.appPartyId}` });
     } catch (err) {
       setMessage({
         type: "error",
@@ -307,6 +344,9 @@ export default function HomePage() {
   const activeIntents = intents.filter((i) =>
     ["SUBMITTED", "LOCK_PENDING", "LOCKED", "MATCHED", "SETTLING"].includes(i.status),
   );
+  const sellAvailable = selectedPair
+    ? availableForSymbol(balances, selectedPair.sell)
+    : null;
 
   return (
     <>
@@ -341,6 +381,15 @@ export default function HomePage() {
 
       <LoopWalletBanner />
 
+      <TradingBalancesStrip
+        appParty={appParty}
+        highlightSymbol={selectedPair?.sell}
+        balances={balances}
+        loading={balancesLoading}
+        error={balancesError}
+        onRefresh={() => void refreshBalances()}
+      />
+
       <div className="grid-2 grid-2-premium">
         <section className="panel panel-glass panel-swap">
           <div className="panel-header">
@@ -358,15 +407,14 @@ export default function HomePage() {
           </div>
 
           <div className="field">
-            <label htmlFor="maker">Maker party ID (your trading account)</label>
+            <label htmlFor="maker">Your trading party (Helvex app party)</label>
             <input
               id="maker"
-              value={maker}
-              onChange={(e) => setMaker(e.target.value)}
-              placeholder="appparty::1220..."
+              value={appParty ?? ""}
+              placeholder="Not activated — allocate via Activate now"
               spellCheck={false}
               className="input-mono"
-              readOnly={Boolean(appParty)}
+              readOnly
             />
             {accountNotice && (
               <p className="field-hint">
@@ -386,7 +434,7 @@ export default function HomePage() {
             )}
           </div>
 
-          <PartyAccessBanner partyId={maker} roleLabel="Maker" />
+          {appParty ? <PartyAccessBanner partyId={appParty} roleLabel="Trading" /> : null}
 
           <div className="field">
             <label htmlFor="pair">Trading pair</label>
@@ -417,6 +465,12 @@ export default function HomePage() {
               {selectedPair && (
                 <p className="field-hint">
                   Minimum {selectedPair.minSell} {selectedPair.sell}
+                  {sellAvailable != null && (
+                    <>
+                      {" "}
+                      · Available {formatAmount(sellAvailable)} {selectedPair.sell}
+                    </>
+                  )}
                 </p>
               )}
             </div>
@@ -561,6 +615,9 @@ export default function HomePage() {
             <div className="intent-list">
               {intents.map((intent) => {
                 const [sell, buy] = intent.pair.split("_");
+                const cancellable = ["SUBMITTED", "LOCK_PENDING", "LOCKED"].includes(
+                  intent.status,
+                );
                 return (
                   <article key={intent.intentId} className="intent-card intent-card-premium">
                     <div className="intent-card-top">
@@ -584,6 +641,18 @@ export default function HomePage() {
                         {intent.intentId.slice(0, 8)}…{intent.intentId.slice(-4)}
                       </span>
                     </div>
+                    {cancellable && (
+                      <div className="intent-actions">
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => cancelIntentHandler(intent.intentId)}
+                          disabled={cancellingId === intent.intentId}
+                        >
+                          {cancellingId === intent.intentId ? "Cancelling…" : "Cancel intent"}
+                        </button>
+                      </div>
+                    )}
                   </article>
                 );
               })}

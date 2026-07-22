@@ -17,8 +17,12 @@ const dmSans = DM_Sans({
 });
 
 export const metadata = {
-  title: "Intent Swap · Canton Network",
-  description: "Permissioned intent-based swap — sign what you want, not how to get it.",
+  title: "Helvex · Canton Network",
+  description: "Helvex — permissioned intent-based swap on Canton Network.",
+  icons: {
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/helvex-logo.png" }],
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

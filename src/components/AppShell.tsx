@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { HelvexMark, appName } from "./HelvexMark";
 import { UserMenu } from "./UserMenu";
 import { WalletConnect } from "./WalletConnect";
 
@@ -29,11 +30,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="app-header">
         <div className="app-header-inner">
           <Link href="/" className="brand">
-            <span className="brand-mark">IS</span>
-            <span className="brand-text">
-              Intent Swap
-              <span className="brand-tag">Protocol</span>
-            </span>
+            <HelvexMark size={36} />
+            <span className="brand-text">{appName()}</span>
           </Link>
 
           <nav className="app-nav" aria-label="Main">

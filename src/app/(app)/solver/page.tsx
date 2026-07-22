@@ -7,6 +7,11 @@ import { formatAmount } from "../../../lib/format-amount";
 import type { PairId } from "@intent-swap/domain";
 import { PartyAccessBanner } from "../../../components/AccessGate";
 import { StatusBadge } from "../../../components/StatusBadge";
+import {
+  TradingBalancesStrip,
+  availableForSymbol,
+  useTradingBalances,
+} from "../../../components/TradingBalances";
 
 interface IntentView {
   intentId: string;
@@ -45,6 +50,12 @@ export default function SolverPage() {
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const {
+    balances,
+    loading: balancesLoading,
+    error: balancesError,
+    refresh: refreshBalances,
+  } = useTradingBalances(solver);
 
   useEffect(() => {
     const email = session?.user.email;
@@ -68,12 +79,13 @@ export default function SolverPage() {
     try {
       const res = await api<{ intents: IntentView[] }>("/v1/solver/intents");
       setIntents(res.intents);
+      await refreshBalances();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load intents");
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [refreshBalances]);
 
   useEffect(() => {
     refresh();
@@ -145,7 +157,7 @@ export default function SolverPage() {
           <div className="stat-value stat-value-mono">
             {solver ? `${solver.slice(0, 14)}…` : "—"}
           </div>
-          <div className="stat-label">Solver party</div>
+          <div className="stat-label">Your trading party</div>
         </div>
         <div className="stat-card stat-card-premium">
           <div className="stat-value">RFQ</div>
@@ -153,7 +165,15 @@ export default function SolverPage() {
         </div>
       </div>
 
-      {solver && <PartyAccessBanner partyId={solver} roleLabel="Solver" />}
+      <TradingBalancesStrip
+        appParty={solver}
+        balances={balances}
+        loading={balancesLoading}
+        error={balancesError}
+        onRefresh={() => void refreshBalances()}
+      />
+
+      {solver && <PartyAccessBanner partyId={solver} roleLabel="Trading" />}
 
       <section className="panel panel-glass">
         <div className="panel-header">
@@ -183,6 +203,7 @@ export default function SolverPage() {
           <div className="solver-queue">
             {intents.map((intent) => {
               const [sell, buy] = intent.pair.split("_");
+              const buyAvail = availableForSymbol(balances, buy);
               return (
                 <div key={intent.intentId} className="solver-row solver-row-premium">
                   <div className="solver-row-info">
@@ -198,6 +219,11 @@ export default function SolverPage() {
                     <span className="solver-maker">
                       Maker {intent.makerParty.slice(0, 22)}…
                     </span>
+                    {buyAvail != null && (
+                      <span className="solver-maker">
+                        Your {buy} available: <strong>{formatAmount(buyAvail)}</strong>
+                      </span>
+                    )}
                   </div>
 
                   <div className="solver-fill-group">

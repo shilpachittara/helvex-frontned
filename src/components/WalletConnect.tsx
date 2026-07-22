@@ -4,12 +4,13 @@ import { useWallet } from "../lib/wallet/WalletProvider";
 
 function shortParty(partyId: string): string {
   const parts = partyId.split("::");
-  if (parts.length !== 2) return partyId.slice(0, 12) + "…";
-  return `${parts[0]}::${parts[1].slice(0, 6)}…`;
+  if (parts.length !== 2) return `${partyId.slice(0, 10)}…`;
+  const hint = parts[0].length > 10 ? `${parts[0].slice(0, 8)}…` : parts[0];
+  return `${hint}::${parts[1].slice(0, 6)}…`;
 }
 
 export function WalletConnect() {
-  const { kind, status, wallet, error, linkMessage, connect, disconnect } = useWallet();
+  const { kind, status, wallet, error, connect, disconnect } = useWallet();
 
   if (kind === "dev") {
     return (
@@ -31,7 +32,6 @@ export function WalletConnect() {
           <LoopMark />
           <span>{shortParty(wallet.partyId)}</span>
         </button>
-        {linkMessage && <span className="wallet-link-hint">{linkMessage}</span>}
       </div>
     );
   }
@@ -56,14 +56,17 @@ export function WalletConnect() {
           </>
         )}
       </button>
-      {linkMessage && !error && <span className="wallet-link-hint">{linkMessage}</span>}
-      {error && <span className="wallet-error">{error}</span>}
+      {error && (
+        <span className="wallet-error" title={error}>
+          {error.length > 48 ? `${error.slice(0, 48)}…` : error}
+        </span>
+      )}
     </div>
   );
 }
 
 export function LoopWalletBanner() {
-  const { kind, status, connect } = useWallet();
+  const { kind, status, connect, linkMessage } = useWallet();
   if (kind !== "loop" || status === "connected") return null;
 
   return (
@@ -71,9 +74,10 @@ export function LoopWalletBanner() {
       <div>
         <strong>Connect your Loop wallet</strong>
         <p>
-          Sign in with the same email as your Loop account. We link your Canton party ID after you
-          approve the connection in Loop — we cannot fetch a wallet address by email alone.
+          Sign in with the same email as your Loop account. Approve the connection in Loop to
+          link your wallet and sign intents.
         </p>
+        {linkMessage && <p className="field-hint">{linkMessage}</p>}
       </div>
       <button
         type="button"

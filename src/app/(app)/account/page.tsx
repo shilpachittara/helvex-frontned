@@ -3,11 +3,13 @@
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
 import {
+  acceptPendingDeposits,
   createApiKey,
   fetchBalances,
   fetchWalletProfile,
   listApiKeys,
   listDeposits,
+  listPendingDeposits,
   listTransfers,
   listWithdrawals,
   onboardAccount,
@@ -20,6 +22,7 @@ import {
   type BalanceView,
   type DepositView,
   type Instrument,
+  type PendingInboundDeposit,
   type TransferView,
   type WalletProfile,
   type WithdrawalView,
@@ -35,6 +38,16 @@ function newIdempotencyKey(): string {
   return crypto.randomUUID().replace(/-/g, "");
 }
 
+/** Compact party id for UI footers (full value stays in title/tooltip). */
+function shortPartyId(partyId: string): string {
+  const parts = partyId.split("::");
+  if (parts.length !== 2) {
+    return partyId.length > 28 ? `${partyId.slice(0, 12)}…${partyId.slice(-8)}` : partyId;
+  }
+  const hint = parts[0].length > 12 ? `${parts[0].slice(0, 10)}…` : parts[0];
+  return `${hint}::${parts[1].slice(0, 8)}…`;
+}
+
 type Notice = { type: "success" | "error"; text: string } | null;
 
 export default function AccountPage() {
@@ -46,6 +59,7 @@ export default function AccountPage() {
   const [appParty, setAppParty] = useState<string | null>(null);
   const [balances, setBalances] = useState<BalanceView[]>([]);
   const [deposits, setDeposits] = useState<DepositView[]>([]);
+  const [pendingInbound, setPendingInbound] = useState<PendingInboundDeposit[]>([]);
   const [withdrawals, setWithdrawals] = useState<WithdrawalView[]>([]);
   const [transfers, setTransfers] = useState<TransferView[]>([]);
   const [apiKeys, setApiKeys] = useState<ApiKeyView[]>([]);
@@ -65,22 +79,31 @@ export default function AccountPage() {
     // Use allSettled so one failing section doesn't blank the others, but DON'T
     // silently substitute empty data on failure — that could show "no balances"
     // during an auth/outage error and make a funded user think they have zero.
-    const [b, d, w, t, k] = await Promise.allSettled([
+    const [b, d, p, w, t, k] = await Promise.allSettled([
       fetchBalances(party),
       listDeposits(party),
+      listPendingDeposits(party),
       listWithdrawals(party),
       listTransfers(party),
       listApiKeys(party),
     ]);
     if (b.status === "fulfilled") setBalances(b.value.balances);
     if (d.status === "fulfilled") setDeposits(d.value.deposits);
+    if (p.status === "fulfilled") setPendingInbound(p.value.pending);
     if (w.status === "fulfilled") setWithdrawals(w.value.withdrawals);
     if (t.status === "fulfilled") setTransfers(t.value.transfers);
     if (k.status === "fulfilled") setApiKeys(k.value.keys);
-    if ([b, d, w, t, k].some((r) => r.status === "rejected")) {
+    const failed = [b, d, p, w, t, k].filter((r): r is PromiseRejectedResult => r.status === "rejected");
+    if (failed.length > 0) {
+      const reason = failed
+        .map((r) => (r.reason instanceof Error ? r.reason.message : String(r.reason)))
+        .find(Boolean);
+      const ledgerDenied = /403|security-sensitive|Active contracts/i.test(reason ?? "");
       setNotice({
         type: "error",
-        text: "Some account data could not be loaded. Displayed balances/history may be incomplete — refresh to retry.",
+        text: ledgerDenied
+          ? "Balances unavailable: ledger user cannot read this party yet (missing CanReadAs). Re-activate or grant rights on the participant, then refresh."
+          : `Some account data could not be loaded${reason ? `: ${reason}` : ""}. Refresh to retry.`,
       });
     }
   }, []);
@@ -218,7 +241,16 @@ export default function AccountPage() {
 
           <BalancesPanel balances={balances} />
 
-          <div className="grid-2 grid-2-premium">
+          <PendingInboundPanel
+            appParty={appParty}
+            pending={pendingInbound}
+            onDone={async (n) => {
+              setNotice(n);
+              await refresh();
+            }}
+          />
+
+          <section className="fund-ops">
             <DepositPanel
               appParty={appParty}
               loopReady={walletKind === "loop" && Boolean(wallet?.partyId)}
@@ -236,7 +268,7 @@ export default function AccountPage() {
                 await refresh();
               }}
             />
-          </div>
+          </section>
 
           <SendPanel
             appParty={appParty}
@@ -305,6 +337,92 @@ function BalancesPanel({ balances }: { balances: BalanceView[] }) {
   );
 }
 
+function PendingInboundPanel({
+  appParty,
+  pending,
+  onDone,
+}: {
+  appParty: string;
+  pending: PendingInboundDeposit[];
+  onDone: (n: Notice) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  if (pending.length === 0) return null;
+
+  async function acceptAll() {
+    setBusy(true);
+    try {
+      const result = await acceptPendingDeposits(appParty);
+      if (result.accepted > 0 && result.failed.length === 0) {
+        onDone({
+          type: "success",
+          text: `Accepted ${result.accepted} pending deposit${result.accepted === 1 ? "" : "s"}. Balances updated.`,
+        });
+      } else if (result.accepted > 0) {
+        onDone({
+          type: "error",
+          text: `Accepted ${result.accepted}, but ${result.failed.length} failed. ${result.failed[0]?.error ?? "Check scan-proxy health."}`,
+        });
+      } else {
+        const hint = result.failed[0]?.error ?? "Unknown error";
+        const scanDown = /fetch failed|ECONNREFUSED|Empty reply|scan/i.test(hint);
+        onDone({
+          type: "error",
+          text: scanDown
+            ? `Could not accept deposits: Scan registry unreachable (${hint}). Restart validator scan-proxy, then retry.`
+            : `Could not accept deposits: ${hint}`,
+        });
+      }
+    } catch (err) {
+      onDone({
+        type: "error",
+        text: err instanceof Error ? err.message : "Accept pending deposits failed",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel panel-glass pending-inbound">
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">Pending deposits</h2>
+          <p className="panel-subtitle">
+            Funds sent to Helvex but not yet credited — Accept to move them into trading balances
+          </p>
+        </div>
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          onClick={acceptAll}
+          disabled={busy}
+        >
+          {busy ? "Accepting…" : `Accept all (${pending.length})`}
+        </button>
+      </div>
+      <div className="intent-list">
+        {pending.map((p) => (
+          <article key={p.contractId} className="intent-card">
+            <div className="intent-card-top">
+              <div className="intent-amounts">
+                {formatAmount(p.amount)} {p.symbol}
+              </div>
+              <span className="status-badge status-pending">PENDING ACCEPT</span>
+            </div>
+            <div className="intent-meta">
+              <span title={p.sender}>From {shortPartyId(p.sender)}</span>
+              {p.executeBefore && (
+                <span>Expires {new Date(p.executeBefore).toLocaleString()}</span>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function DepositPanel({
   appParty,
   loopReady,
@@ -362,51 +480,52 @@ function DepositPanel({
   }
 
   return (
-    <section className="panel panel-glass">
+    <section className="panel panel-glass fund-ops-card">
       <div className="panel-header">
         <div>
           <h2 className="panel-title">Deposit</h2>
-          <p className="panel-subtitle">Loop → app party</p>
+          <p className="panel-subtitle">Loop wallet → Helvex trading party</p>
         </div>
       </div>
-      <div className="field">
-        <label htmlFor="dep-instrument">Token</label>
-        <select
-          id="dep-instrument"
-          value={instrument}
-          onChange={(e) => setInstrument(e.target.value as Instrument)}
-        >
-          {INSTRUMENTS.map((i) => (
-            <option key={i} value={i}>
-              {i}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="field">
-        <label htmlFor="dep-amount">Amount</label>
-        <input
-          id="dep-amount"
-          inputMode="decimal"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          placeholder="0.0"
-          className="input-mono"
-        />
+      <div className="fund-ops-fields">
+        <div className="field">
+          <label htmlFor="dep-instrument">Token</label>
+          <select
+            id="dep-instrument"
+            value={instrument}
+            onChange={(e) => setInstrument(e.target.value as Instrument)}
+          >
+            {INSTRUMENTS.map((i) => (
+              <option key={i} value={i}>
+                {i}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="dep-amount">Amount</label>
+          <input
+            id="dep-amount"
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0.0"
+            className="input-mono"
+          />
+        </div>
       </div>
       <button
         type="button"
-        className="btn btn-primary"
+        className="btn btn-primary fund-ops-btn"
         onClick={submit}
         disabled={busy || !isValidAmount(amount)}
       >
         {busy ? <span className="spinner" /> : loopReady ? "Deposit from Loop" : "Prepare deposit"}
       </button>
-      {depositTo && (
-        <p className="field-hint">
-          Deposit destination: <span className="input-mono">{depositTo}</span>
-        </p>
-      )}
+      <p className="fund-ops-meta" title={depositTo ?? appParty}>
+        <span>To trading party</span>
+        <code>{shortPartyId(depositTo ?? appParty)}</code>
+      </p>
     </section>
   );
 }
@@ -450,49 +569,51 @@ function WithdrawPanel({
   }
 
   return (
-    <section className="panel panel-glass">
+    <section className="panel panel-glass fund-ops-card">
       <div className="panel-header">
         <div>
           <h2 className="panel-title">Withdraw</h2>
-          <p className="panel-subtitle">App party → Loop</p>
+          <p className="panel-subtitle">Helvex trading party → Loop wallet</p>
         </div>
       </div>
-      <div className="field">
-        <label htmlFor="wd-instrument">Token</label>
-        <select
-          id="wd-instrument"
-          value={instrument}
-          onChange={(e) => setInstrument(e.target.value as Instrument)}
-        >
-          {INSTRUMENTS.map((i) => (
-            <option key={i} value={i}>
-              {i}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="field">
-        <label htmlFor="wd-amount">Amount</label>
-        <input
-          id="wd-amount"
-          inputMode="decimal"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          placeholder="0.0"
-          className="input-mono"
-        />
+      <div className="fund-ops-fields">
+        <div className="field">
+          <label htmlFor="wd-instrument">Token</label>
+          <select
+            id="wd-instrument"
+            value={instrument}
+            onChange={(e) => setInstrument(e.target.value as Instrument)}
+          >
+            {INSTRUMENTS.map((i) => (
+              <option key={i} value={i}>
+                {i}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="wd-amount">Amount</label>
+          <input
+            id="wd-amount"
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0.0"
+            className="input-mono"
+          />
+        </div>
       </div>
       <button
         type="button"
-        className="btn btn-primary"
+        className="btn btn-primary fund-ops-btn"
         onClick={submit}
         disabled={busy || !isValidAmount(amount) || !destination}
       >
         {busy ? <span className="spinner" /> : "Request withdrawal"}
       </button>
-      <p className="field-hint">
-        Destination (locked):{" "}
-        <span className="input-mono">{destination ?? "Link a Loop wallet first"}</span>
+      <p className="fund-ops-meta" title={destination ?? undefined}>
+        <span>To Loop (locked)</span>
+        <code>{destination ? shortPartyId(destination) : "Connect Loop first"}</code>
       </p>
     </section>
   );
@@ -542,7 +663,7 @@ function SendPanel({
       <div className="panel-header">
         <div>
           <h2 className="panel-title">Send to a user</h2>
-          <p className="panel-subtitle">Instant, fee-free transfer to another Intent Swap account</p>
+          <p className="panel-subtitle">Instant, fee-free transfer to another Helvex account</p>
         </div>
       </div>
       <div className="field">

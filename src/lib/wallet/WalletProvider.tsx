@@ -118,8 +118,8 @@ export function WalletProvider({
     if (!accountEmail || kind !== "loop" || status === "connected") return;
     void fetchWalletProfile(accountEmail)
       .then((profile) => {
-        if (profile.cantonPartyId) {
-          setLinkMessage(`Registered party · ${profile.cantonPartyId} — connect Loop to sign intents`);
+        if (profile.loopPartyId || profile.cantonPartyId) {
+          setLinkMessage("Wallet party on file — Connect Loop to sign.");
         }
       })
       .catch(() => {});
@@ -139,7 +139,12 @@ export function WalletProvider({
       await connectLoopWallet();
     } catch (err) {
       setStatus("disconnected");
-      setError(err instanceof Error ? err.message : "Failed to connect Loop wallet");
+      const msg = err instanceof Error ? err.message : "Failed to connect Loop wallet";
+      setError(
+        /ticket|expired|invalid|connection details/i.test(msg)
+          ? `${msg} Cleared stale Loop session — click Connect Loop again (allow popups for localhost:3001).`
+          : msg,
+      );
     }
   }, [kind]);
 
