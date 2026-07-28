@@ -216,6 +216,14 @@ export default function AdminKycPage() {
                     {request.profileType ? ` · ${request.profileType.replace("_", " ")}` : ""}
                     {request.institution ? ` · ${request.institution}` : ""}
                   </span>
+                  {request.diditStatus && (
+                    <span className="kyc-admin-meta">
+                      Didit: <strong>{request.diditStatus}</strong>
+                      {request.diditStatus === "In Review"
+                        ? " — automated checks were inconclusive, decide manually"
+                        : ""}
+                    </span>
+                  )}
                   {request.notes && <p className="field-hint">{request.notes}</p>}
                 </div>
                 <div className="kyc-admin-actions">

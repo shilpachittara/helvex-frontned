@@ -380,6 +380,9 @@ export interface KycRequestView {
   status: string;
   reviewNotes: string | null;
   reviewedAt: string | null;
+  /** Latest Didit verdict, when identity verification is configured. */
+  diditStatus: string | null;
+  diditSessionId: string | null;
   createdAt: string;
 }
 
@@ -391,7 +394,7 @@ export async function submitKycRequest(body: {
   requestedRole: "MAKER" | "SOLVER" | "BOTH";
   institution?: InstitutionDetailsInput;
   notes?: string;
-}): Promise<{ request: KycRequestView }> {
+}): Promise<{ request: KycRequestView; verificationUrl: string | null }> {
   return api("/v1/kyc/requests", { method: "POST", body: JSON.stringify(body) });
 }
 
