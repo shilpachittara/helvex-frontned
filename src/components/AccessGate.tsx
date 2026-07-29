@@ -171,9 +171,7 @@ export function PartyAccessBanner({
 
   if (check.allowed) {
     return (
-      <div className="access-party-banner access-party-ok">
-        {roleLabel} approved · KYC {check.kycRequired ? "verified" : "not required"}
-      </div>
+      <div className="access-party-banner access-party-ok">{roleLabel} approved</div>
     );
   }
 

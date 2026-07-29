@@ -3,16 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { networkBadgeLabel } from "../lib/demo-mode";
 import { HelvexMark, appName } from "./HelvexMark";
 import { UserMenu } from "./UserMenu";
-import { WalletConnect } from "./WalletConnect";
 
 function networkLabel(): string {
-  const network = process.env.NEXT_PUBLIC_CANTON_NETWORK ?? "devnet";
-  if (network === "localnet") return "Canton LocalNet";
-  if (network === "testnet") return "Canton TestNet";
-  if (network === "mainnet") return "Canton MainNet";
-  return "Canton DevNet";
+  return networkBadgeLabel(process.env.NEXT_PUBLIC_CANTON_NETWORK ?? "devnet");
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -54,7 +50,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className="network-dot pulse" />
               {networkLabel()}
             </span>
-            <WalletConnect />
             <UserMenu />
           </div>
         </div>

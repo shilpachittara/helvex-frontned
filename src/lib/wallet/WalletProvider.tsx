@@ -14,6 +14,7 @@ import type { CanonicalIntentPayload } from "@intent-swap/domain";
 import { linkLoopWallet, fetchWalletProfile } from "../api";
 import {
   autoConnectLoopWallet,
+  clearLoopConnectSession,
   connectLoopWallet,
   disconnectLoopWallet,
   emailFromProvider,
@@ -21,10 +22,12 @@ import {
   partyFromProvider,
   transferWithLoop,
 } from "./loop-client";
-import { isLoopWalletEnabled, loopNetworkFromEnv } from "./config";
+import { isDemoMode } from "../demo-mode";
+import { intentSignatureMode, isLoopWalletEnabled, loopNetworkFromEnv } from "./config";
 import { signIntentPayload } from "./sign-intent";
 import type {
   ConnectedWallet,
+  LoopInstrumentSpec,
   LoopProvider,
   WalletContextValue,
   WalletKind,
@@ -54,27 +57,44 @@ export function WalletProvider({
       if (!accountEmail) return;
       const loopEmail = emailFromProvider(provider)?.trim().toLowerCase();
       const partyId = partyFromProvider(provider);
-      if (!loopEmail) {
-        setLinkMessage("Loop connected, but no email returned — link your Loop account email to your login.");
-        return;
-      }
-      if (loopEmail !== accountEmail.trim().toLowerCase()) {
-        setError(
-          `Loop wallet (${loopEmail}) does not match your login (${accountEmail}). Sign in with the same email as your Loop account.`,
-        );
-        return;
+      const loginEmail = accountEmail.trim().toLowerCase();
+      // Demo recordings often use a Helvex login that differs from the Loop
+      // account email — still link the party so deposit/withdraw work on camera.
+      if (!isDemoMode()) {
+        if (!loopEmail) {
+          setLinkMessage(
+            "Loop connected, but no email returned — link your Loop account email to your login.",
+          );
+          return;
+        }
+        if (loopEmail !== loginEmail) {
+          setError(
+            `Loop wallet (${loopEmail}) does not match your login (${accountEmail}). Sign in with the same email as your Loop account.`,
+          );
+          return;
+        }
       }
       try {
         await linkLoopWallet({
           email: accountEmail,
           cantonPartyId: partyId,
-          loopEmail,
+          loopEmail: loopEmail || loginEmail,
         });
-        setLinkMessage(`Loop wallet linked · ${partyId}`);
+        setLinkMessage(
+          isDemoMode()
+            ? "Loop wallet connected"
+            : `Loop wallet linked · ${partyId}`,
+        );
         setError(null);
       } catch (err) {
         setLinkMessage(null);
-        setError(err instanceof Error ? err.message : "Failed to link Loop wallet");
+        setError(
+          isDemoMode()
+            ? "Could not link wallet. Try Connect Wallet again."
+            : err instanceof Error
+              ? err.message
+              : "Failed to link Loop wallet",
+        );
       }
     },
     [accountEmail],
@@ -119,7 +139,7 @@ export function WalletProvider({
     void fetchWalletProfile(accountEmail)
       .then((profile) => {
         if (profile.loopPartyId || profile.cantonPartyId) {
-          setLinkMessage("Wallet party on file — Connect Loop to sign.");
+          setLinkMessage("Wallet party on file — Connect Wallet to sign.");
         }
       })
       .catch(() => {});
@@ -135,16 +155,24 @@ export function WalletProvider({
     setError(null);
     setLinkMessage(null);
     setStatus("connecting");
+    // Drop a stale Connect ticket before opening the popup — leftover
+    // sessionStorage entries are the #1 cause of "not connecting" in demos.
+    clearLoopConnectSession();
+    providerRef.current = null;
     try {
       await connectLoopWallet();
     } catch (err) {
       setStatus("disconnected");
       const msg = err instanceof Error ? err.message : "Failed to connect Loop wallet";
-      setError(
-        /ticket|expired|invalid|connection details/i.test(msg)
-          ? `${msg} Cleared stale Loop session — click Connect Loop again (allow popups for localhost:3001).`
-          : msg,
-      );
+      if (isDemoMode()) {
+        setError("Allow the wallet popup, then click Connect Wallet again.");
+      } else {
+        setError(
+          /ticket|expired|invalid|connection details/i.test(msg)
+            ? `${msg} Cleared stale session — click Connect Wallet again (allow popups for localhost:3001).`
+            : msg,
+        );
+      }
     }
   }, [kind]);
 
@@ -161,7 +189,8 @@ export function WalletProvider({
 
   const signIntent = useCallback(
     async (payload: CanonicalIntentPayload) => {
-      if (kind === "loop" && !providerRef.current) {
+      // Dev intent signatures do not need Loop connected (validator-hosted app party).
+      if (intentSignatureMode() !== "dev" && kind === "loop" && !providerRef.current) {
         throw new Error("Connect your Loop wallet before submitting an intent.");
       }
       return signIntentPayload(wallet, providerRef.current, payload);
@@ -174,12 +203,15 @@ export function WalletProvider({
       if (kind !== "loop" || !providerRef.current) {
         throw new Error("Connect your Loop wallet before depositing.");
       }
-      // "CC" is the native amulet; the SDK defaults to it when no instrument is
-      // given. Other tokens are passed by their registry instrument id.
-      const instrument =
-        input.instrumentId && input.instrumentId !== "CC"
-          ? { instrument_id: input.instrumentId }
-          : undefined;
+      // Prefer prepareDeposit's ledger selector (USDCx + admin). Fallback maps
+      // UI symbols so we never send "USDCX" (wrong case) to Loop.
+      let instrument: LoopInstrumentSpec | undefined = input.loopInstrument;
+      if (!instrument) {
+        const sym = (input.instrumentId ?? "CC").toUpperCase();
+        if (sym === "CC") instrument = { instrument_id: "Amulet" };
+        else if (sym === "USDCX") instrument = { instrument_id: "USDCx" };
+        else instrument = { instrument_id: sym };
+      }
       await transferWithLoop(providerRef.current, {
         receiver: input.to,
         amount: input.amount,

@@ -13,9 +13,11 @@ import {
 } from "../../lib/api";
 import { formatAmount } from "../../lib/format-amount";
 import { isValidAmount } from "../../lib/amount";
+import { isDemoMode } from "../../lib/demo-mode";
 import { useWallet } from "../../lib/wallet/WalletProvider";
 import type { PairId } from "../../lib/signing";
 import { PartyAccessBanner } from "../../components/AccessGate";
+import { DeadlineLabel } from "../../components/ClientTime";
 import { LoopWalletBanner } from "../../components/WalletConnect";
 import { IntentProgress, StatusBadge } from "../../components/StatusBadge";
 import {
@@ -50,14 +52,37 @@ const TOKEN_COLORS: Record<string, string> = {
   CC: "#6366f1",
 };
 
-function formatDeadline(iso: string): string {
-  const d = new Date(iso);
-  const diff = d.getTime() - Date.now();
-  if (!Number.isFinite(diff)) return "—";
-  if (diff <= 0) return "Expired";
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 60) return `${mins}m left`;
-  return `${Math.floor(mins / 60)}h ${mins % 60}m left`;
+/** Preset TTLs offered in the UI (seconds), filtered by the pair's max. */
+const TTL_PRESETS_SECONDS = [
+  60, // 1 minute
+  5 * 60, // 5 minutes
+  15 * 60, // 15 minutes
+  30 * 60, // 30 minutes
+  60 * 60, // 1 hour
+  6 * 60 * 60, // 6 hours
+  12 * 60 * 60, // 12 hours
+  24 * 60 * 60, // 1 day
+] as const;
+
+function ttlLabel(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) {
+    const mins = seconds / 60;
+    return mins === 1 ? "1 minute" : `${mins} minutes`;
+  }
+  if (seconds < 86400) {
+    const hours = seconds / 3600;
+    return hours === 1 ? "1 hour" : `${hours} hours`;
+  }
+  const days = seconds / 86400;
+  return days === 1 ? "1 day" : `${days} days`;
+}
+
+function ttlOptionsForMax(maxSeconds: number): number[] {
+  const opts = TTL_PRESETS_SECONDS.filter((s) => s <= maxSeconds);
+  // Always include the configured max if it isn't already a preset.
+  if (maxSeconds > 0 && !opts.includes(maxSeconds)) opts.push(maxSeconds);
+  return opts.length > 0 ? opts : [Math.max(60, maxSeconds)];
 }
 
 function TokenChip({ symbol }: { symbol: string }) {
@@ -82,6 +107,8 @@ export default function HomePage() {
   const [pair, setPair] = useState<PairId>("CBTC_USDCX");
   const [sellAmount, setSellAmount] = useState("0.01");
   const [minBuyAmount, setMinBuyAmount] = useState("10");
+  /** Intent open window; default 5m. Clamped to pair.maxTtlSeconds on submit. */
+  const [ttlSeconds, setTtlSeconds] = useState(300);
   const [quote, setQuote] = useState<QuoteView | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
@@ -133,6 +160,18 @@ export default function HomePage() {
   }, [session?.user.email]);
 
   const selectedPair = pairs.find((p) => p.id === pair);
+  const ttlOptions = selectedPair
+    ? ttlOptionsForMax(selectedPair.maxTtlSeconds)
+    : [...TTL_PRESETS_SECONDS];
+
+  // Keep the selected TTL inside the pair's allowed max when pairs load / change.
+  useEffect(() => {
+    if (!selectedPair) return;
+    if (ttlSeconds > selectedPair.maxTtlSeconds) {
+      const opts = ttlOptionsForMax(selectedPair.maxTtlSeconds);
+      setTtlSeconds(opts.includes(300) ? 300 : opts[opts.length - 1]!);
+    }
+  }, [selectedPair, ttlSeconds]);
 
   const refreshIntents = useCallback(async () => {
     // The backend lists intents for the authenticated app party; querying with
@@ -282,10 +321,12 @@ export default function HomePage() {
       });
       return;
     }
+    const maxTtl = selectedPair?.maxTtlSeconds ?? 86400;
+    const effectiveTtl = Math.min(Math.max(60, ttlSeconds), maxTtl);
     setLoading(true);
     try {
       const intentId = crypto.randomUUID();
-      const deadline = new Date(Date.now() + 5 * 60_000).toISOString();
+      const deadline = new Date(Date.now() + effectiveTtl * 1000).toISOString();
       const payload = {
         domain: "intent-swap/v1" as const,
         intentId,
@@ -330,7 +371,12 @@ export default function HomePage() {
       );
       setAppParty(account.appPartyId);
       setAccountNotice(null);
-      setMessage({ type: "success", text: `Trading account activated · ${account.appPartyId}` });
+      setMessage({
+        type: "success",
+        text: isDemoMode()
+          ? "Trading account activated"
+          : `Trading account activated · ${account.appPartyId}`,
+      });
     } catch (err) {
       setMessage({
         type: "error",
@@ -341,7 +387,8 @@ export default function HomePage() {
     }
   }, [session?.user.email, activating]);
 
-  const activeIntents = intents.filter((i) =>
+  const visibleIntents = intents.filter((i) => i.status !== "FAILED");
+  const activeIntents = visibleIntents.filter((i) =>
     ["SUBMITTED", "LOCK_PENDING", "LOCKED", "MATCHED", "SETTLING"].includes(i.status),
   );
   const sellAvailable = selectedPair
@@ -395,7 +442,7 @@ export default function HomePage() {
           <div className="panel-header">
             <div>
               <h2 className="panel-title">New swap intent</h2>
-              <p className="panel-subtitle">Maker signs once · protocol settles atomically</p>
+              <p className="panel-subtitle">You sign once · protocol settles atomically</p>
             </div>
             {selectedPair && (
               <div className="pair-badge">
@@ -406,35 +453,53 @@ export default function HomePage() {
             )}
           </div>
 
-          <div className="field">
-            <label htmlFor="maker">Your trading party (Helvex app party)</label>
-            <input
-              id="maker"
-              value={appParty ?? ""}
-              placeholder="Not activated — allocate via Activate now"
-              spellCheck={false}
-              className="input-mono"
-              readOnly
-            />
-            {accountNotice && (
-              <p className="field-hint">
-                {accountNotice}{" "}
-                <button
-                  type="button"
-                  className="link-button"
-                  onClick={activateAccount}
-                  disabled={activating}
-                >
-                  {activating ? "Activating…" : "Activate now"}
-                </button>
-              </p>
-            )}
-            {walletKind === "loop" && !wallet?.partyId && (
-              <p className="field-hint">Connect Loop wallet to sign and fund deposits.</p>
-            )}
-          </div>
+          {!isDemoMode() && (
+            <div className="field">
+              <label htmlFor="maker">Your trading party (Helvex app party)</label>
+              <input
+                id="maker"
+                value={appParty ?? ""}
+                placeholder="Not activated — allocate via Activate now"
+                spellCheck={false}
+                className="input-mono"
+                readOnly
+              />
+              {accountNotice && (
+                <p className="field-hint">
+                  {accountNotice}{" "}
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={activateAccount}
+                    disabled={activating}
+                  >
+                    {activating ? "Activating…" : "Activate now"}
+                  </button>
+                </p>
+              )}
+              {walletKind === "loop" && !wallet?.partyId && (
+                <p className="field-hint">Connect Wallet from the account menu to sign and fund deposits.</p>
+              )}
+            </div>
+          )}
 
-          {appParty ? <PartyAccessBanner partyId={appParty} roleLabel="Trading" /> : null}
+          {accountNotice && isDemoMode() && (
+            <p className="field-hint">
+              {accountNotice.replace(/·\s+\S+$/, "")}{" "}
+              <button
+                type="button"
+                className="link-button"
+                onClick={activateAccount}
+                disabled={activating}
+              >
+                {activating ? "Activating…" : "Activate now"}
+              </button>
+            </p>
+          )}
+
+          {appParty && !isDemoMode() ? (
+            <PartyAccessBanner partyId={appParty} roleLabel="Trading" />
+          ) : null}
 
           <div className="field">
             <label htmlFor="pair">Trading pair</label>
@@ -552,6 +617,26 @@ export default function HomePage() {
             can’t meet it.
           </p>
 
+          <div className="field">
+            <label htmlFor="ttl">Expires in</label>
+            <select
+              id="ttl"
+              value={ttlSeconds}
+              onChange={(e) => setTtlSeconds(Number(e.target.value))}
+            >
+              {ttlOptions.map((s) => (
+                <option key={s} value={s}>
+                  {ttlLabel(s)}
+                </option>
+              ))}
+            </select>
+            <p className="field-hint">
+              How long solvers can fill this intent. Max{" "}
+              {ttlLabel(selectedPair?.maxTtlSeconds ?? 86400)}. Unfilled intents auto-refund after
+              expiry.
+            </p>
+          </div>
+
           <button
             type="button"
             className="btn btn-primary btn-glow"
@@ -592,7 +677,7 @@ export default function HomePage() {
             <div>
               <h2 className="panel-title">Your intents</h2>
               <p className="panel-subtitle">
-                {activeIntents.length} active · {intents.length} total
+                {activeIntents.length} active · {visibleIntents.length} total
               </p>
             </div>
             <button
@@ -605,7 +690,7 @@ export default function HomePage() {
             </button>
           </div>
 
-          {intents.length === 0 ? (
+          {visibleIntents.length === 0 ? (
             <div className="empty-state empty-state-premium">
               <div className="empty-state-icon">◎</div>
               <p>No intents yet</p>
@@ -613,7 +698,7 @@ export default function HomePage() {
             </div>
           ) : (
             <div className="intent-list">
-              {intents.map((intent) => {
+              {visibleIntents.map((intent) => {
                 const [sell, buy] = intent.pair.split("_");
                 const cancellable = ["SUBMITTED", "LOCK_PENDING", "LOCKED"].includes(
                   intent.status,
@@ -636,7 +721,7 @@ export default function HomePage() {
                     </div>
                     <IntentProgress status={intent.status} />
                     <div className="intent-meta">
-                      <span>{formatDeadline(intent.deadline)}</span>
+                      <DeadlineLabel iso={intent.deadline} />
                       <span className="intent-id" title={intent.intentId}>
                         {intent.intentId.slice(0, 8)}…{intent.intentId.slice(-4)}
                       </span>

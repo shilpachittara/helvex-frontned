@@ -28,7 +28,9 @@ import {
   type WithdrawalView,
 } from "../../../lib/api";
 import { isValidAmount } from "../../../lib/amount";
+import { isDemoMode } from "../../../lib/demo-mode";
 import { formatAmount } from "../../../lib/format-amount";
+import { formatUtcDate, formatUtcDateTime } from "../../../lib/format-time";
 import { useWallet } from "../../../lib/wallet/WalletProvider";
 
 const INSTRUMENTS: Instrument[] = ["CC", "CBTC", "USDCX"];
@@ -196,7 +198,7 @@ export default function AccountPage() {
           </div>
           {!profile?.loopPartyId && !profile?.cantonPartyId && (
             <p className="field-hint">
-              Connect your Loop wallet first so withdrawals can be locked to your address.
+              Connect Wallet from the account menu so withdrawals can be locked to your address.
             </p>
           )}
           <button
@@ -221,11 +223,15 @@ export default function AccountPage() {
               </button>
             </div>
             <div className="account-identity">
-              <IdRow label="App party (trading)" value={appParty} mono />
+              {!isDemoMode() && <IdRow label="App party (trading)" value={appParty} mono />}
               <IdRow
                 label="Linked Loop party (withdraw destination)"
-                value={profile?.loopPartyId ?? profile?.cantonPartyId ?? "Not linked"}
-                mono
+                value={
+                  isDemoMode()
+                    ? "Linked (hidden in demo)"
+                    : (profile?.loopPartyId ?? profile?.cantonPartyId ?? "Not linked")
+                }
+                mono={!isDemoMode()}
               />
               {profile?.sponsoredCc && parseFloat(profile.sponsoredCc) > 0 && (
                 <IdRow label="Traffic sponsored" value={`${formatAmount(profile.sponsoredCc)} CC`} />
@@ -413,7 +419,7 @@ function PendingInboundPanel({
             <div className="intent-meta">
               <span title={p.sender}>From {shortPartyId(p.sender)}</span>
               {p.executeBefore && (
-                <span>Expires {new Date(p.executeBefore).toLocaleString()}</span>
+                <span>Expires {formatUtcDateTime(p.executeBefore)}</span>
               )}
             </div>
           </article>
@@ -431,7 +437,12 @@ function DepositPanel({
 }: {
   appParty: string;
   loopReady: boolean;
-  transfer: (input: { to: string; instrumentId: string; amount: string }) => Promise<void>;
+  transfer: (input: {
+    to: string;
+    amount: string;
+    instrumentId?: string;
+    loopInstrument?: { instrument_id: string; instrument_admin?: string };
+  }) => Promise<void>;
   onDone: (n: Notice) => void;
 }) {
   const [instrument, setInstrument] = useState<Instrument>("CC");
@@ -444,36 +455,46 @@ function DepositPanel({
       onDone({ type: "error", text: "Enter a valid amount greater than zero." });
       return;
     }
+    if (!loopReady) {
+      onDone({
+        type: "error",
+        text: isDemoMode()
+          ? "Connect Wallet from the account menu, then deposit."
+          : "Connect Wallet from the account menu before depositing.",
+      });
+      return;
+    }
     setBusy(true);
     try {
-      const { depositTo: to } = await prepareDeposit(appParty, {
+      const { depositTo: to, loopInstrument } = await prepareDeposit(appParty, {
         instrument,
         amount,
         idempotencyKey: newIdempotencyKey(),
       });
       setDepositTo(to);
-      if (loopReady) {
-        try {
-          await transfer({ to, instrumentId: instrument, amount });
-          onDone({ type: "success", text: "Deposit transfer submitted from Loop." });
-        } catch (err) {
-          onDone({
-            type: "error",
-            text:
-              err instanceof Error
-                ? `Prepared. Loop transfer failed: ${err.message}. Send ${amount} ${instrument} to ${to} manually.`
-                : "Loop transfer failed.",
-          });
-        }
-      } else {
+      try {
+        await transfer({ to, amount, instrumentId: instrument, loopInstrument });
+        onDone({ type: "success", text: "Deposit transfer submitted from Loop." });
+        setAmount("");
+      } catch (err) {
         onDone({
-          type: "success",
-          text: `Deposit prepared. Send ${amount} ${instrument} to ${to} from Loop.`,
+          type: "error",
+          text: isDemoMode()
+            ? "Deposit needs Loop approval — open the Loop popup and confirm the transfer."
+            : err instanceof Error
+              ? `Prepared. Loop transfer failed: ${err.message}. Send ${amount} ${instrument} to ${to} manually.`
+              : "Loop transfer failed.",
         });
       }
-      setAmount("");
     } catch (err) {
-      onDone({ type: "error", text: err instanceof Error ? err.message : "Deposit failed" });
+      onDone({
+        type: "error",
+        text: isDemoMode()
+          ? "Deposit unavailable — connect Loop and try again."
+          : err instanceof Error
+            ? err.message
+            : "Deposit failed",
+      });
     } finally {
       setBusy(false);
     }
@@ -522,10 +543,12 @@ function DepositPanel({
       >
         {busy ? <span className="spinner" /> : loopReady ? "Deposit from Loop" : "Prepare deposit"}
       </button>
-      <p className="fund-ops-meta" title={depositTo ?? appParty}>
-        <span>To trading party</span>
-        <code>{shortPartyId(depositTo ?? appParty)}</code>
-      </p>
+      {!isDemoMode() && (
+        <p className="fund-ops-meta" title={depositTo ?? appParty}>
+          <span>To trading party</span>
+          <code>{shortPartyId(depositTo ?? appParty)}</code>
+        </p>
+      )}
     </section>
   );
 }
@@ -549,7 +572,12 @@ function WithdrawPanel({
       return;
     }
     if (!destination) {
-      onDone({ type: "error", text: "Link a Loop wallet before withdrawing." });
+      onDone({
+        type: "error",
+        text: isDemoMode()
+          ? "Connect Wallet from the account menu, then withdraw."
+          : "Connect Wallet from the account menu before withdrawing.",
+      });
       return;
     }
     setBusy(true);
@@ -562,7 +590,14 @@ function WithdrawPanel({
       onDone({ type: "success", text: "Withdrawal requested. Funds return to your Loop party." });
       setAmount("");
     } catch (err) {
-      onDone({ type: "error", text: err instanceof Error ? err.message : "Withdrawal failed" });
+      onDone({
+        type: "error",
+        text: isDemoMode()
+          ? "Withdrawal unavailable right now — check balance and try again."
+          : err instanceof Error
+            ? err.message
+            : "Withdrawal failed",
+      });
     } finally {
       setBusy(false);
     }
@@ -613,7 +648,7 @@ function WithdrawPanel({
       </button>
       <p className="fund-ops-meta" title={destination ?? undefined}>
         <span>To Loop (locked)</span>
-        <code>{destination ? shortPartyId(destination) : "Connect Loop first"}</code>
+        <code>{destination ? shortPartyId(destination) : "Connect Wallet first"}</code>
       </p>
     </section>
   );
@@ -720,17 +755,18 @@ function SendPanel({
 }
 
 function TransfersHistory({ transfers }: { transfers: TransferView[] }) {
-  if (transfers.length === 0) return null;
+  const visible = transfers.filter((t) => t.status !== "FAILED").slice(0, 10);
+  if (visible.length === 0) return null;
   return (
     <section className="panel panel-glass">
       <div className="panel-header">
         <div>
           <h2 className="panel-title">Recent transfers</h2>
-          <p className="panel-subtitle">{transfers.length} total</p>
+          <p className="panel-subtitle">{visible.length} total</p>
         </div>
       </div>
       <div className="intent-list">
-        {transfers.slice(0, 10).map((t) => {
+        {visible.map((t) => {
           const counterparty = t.direction === "OUT" ? t.recipientAppParty : t.senderAppParty;
           return (
             <article key={t.id} className="intent-card">
@@ -746,7 +782,7 @@ function TransfersHistory({ transfers }: { transfers: TransferView[] }) {
                 <span className="intent-id" title={counterparty ?? ""}>
                   {counterparty ? `${counterparty.slice(0, 16)}…` : "—"}
                 </span>
-                <span>{new Date(t.createdAt).toLocaleString()}</span>
+                <span>{formatUtcDateTime(t.createdAt)}</span>
               </div>
             </article>
           );
@@ -757,17 +793,18 @@ function TransfersHistory({ transfers }: { transfers: TransferView[] }) {
 }
 
 function WithdrawalsHistory({ withdrawals }: { withdrawals: WithdrawalView[] }) {
-  if (withdrawals.length === 0) return null;
+  const visible = withdrawals.filter((w) => w.status !== "FAILED").slice(0, 10);
+  if (visible.length === 0) return null;
   return (
     <section className="panel panel-glass">
       <div className="panel-header">
         <div>
           <h2 className="panel-title">Recent withdrawals</h2>
-          <p className="panel-subtitle">{withdrawals.length} total · destination-locked</p>
+          <p className="panel-subtitle">{visible.length} total · destination-locked</p>
         </div>
       </div>
       <div className="intent-list">
-        {withdrawals.slice(0, 10).map((w) => (
+        {visible.map((w) => (
           <article key={w.id} className="intent-card">
             <div className="intent-card-top">
               <div className="intent-amounts">
@@ -780,7 +817,7 @@ function WithdrawalsHistory({ withdrawals }: { withdrawals: WithdrawalView[] }) 
               <span className="intent-id" title={w.destLoopParty ?? ""}>
                 {w.destLoopParty ? `${w.destLoopParty.slice(0, 16)}…` : "—"}
               </span>
-              <span>{new Date(w.createdAt).toLocaleString()}</span>
+              <span>{formatUtcDateTime(w.createdAt)}</span>
             </div>
           </article>
         ))}
@@ -790,17 +827,18 @@ function WithdrawalsHistory({ withdrawals }: { withdrawals: WithdrawalView[] }) 
 }
 
 function DepositsHistory({ deposits }: { deposits: DepositView[] }) {
-  if (deposits.length === 0) return null;
+  const visible = deposits.filter((d) => d.status !== "FAILED").slice(0, 10);
+  if (visible.length === 0) return null;
   return (
     <section className="panel panel-glass">
       <div className="panel-header">
         <div>
           <h2 className="panel-title">Recent deposits</h2>
-          <p className="panel-subtitle">{deposits.length} total</p>
+          <p className="panel-subtitle">{visible.length} total</p>
         </div>
       </div>
       <div className="intent-list">
-        {deposits.slice(0, 10).map((d) => (
+        {visible.map((d) => (
           <article key={d.id} className="intent-card">
             <div className="intent-card-top">
               <div className="intent-amounts">
@@ -809,7 +847,7 @@ function DepositsHistory({ deposits }: { deposits: DepositView[] }) {
               <span className={`status-badge status-${d.status.toLowerCase()}`}>{d.status}</span>
             </div>
             <div className="intent-meta">
-              <span>{new Date(d.createdAt).toLocaleString()}</span>
+              <span>{formatUtcDateTime(d.createdAt)}</span>
               {d.ledgerTxId && (
                 <span className="intent-id" title={d.ledgerTxId}>
                   {d.ledgerTxId.slice(0, 10)}…
@@ -965,7 +1003,7 @@ function ApiKeysPanel({
               <div className="intent-meta">
                 <span className="input-mono">{k.keyId}</span>
                 <span>
-                  {k.lastUsedAt ? `Used ${new Date(k.lastUsedAt).toLocaleDateString()}` : "Never used"}
+                  {k.lastUsedAt ? `Used ${formatUtcDate(k.lastUsedAt)}` : "Never used"}
                 </span>
               </div>
             </article>

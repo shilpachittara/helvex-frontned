@@ -14,6 +14,9 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     }
   }, [status, router]);
 
+  // With a server-passed session, status is already authenticated/unauthenticated
+  // on the first paint (no loading flicker). Keep a loading shell only when the
+  // client still has to resolve the session.
   if (status === "loading") {
     return (
       <div className="auth-loading">
@@ -23,7 +26,14 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     );
   }
 
-  if (status === "unauthenticated") return null;
+  if (status === "unauthenticated") {
+    return (
+      <div className="auth-loading">
+        <div className="access-spinner" aria-hidden />
+        <p>Redirecting to sign in…</p>
+      </div>
+    );
+  }
 
   return children;
 }

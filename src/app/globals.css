@@ -684,12 +684,18 @@ input::placeholder {
 }
 
 .status-refunded,
+.status-refunding,
 .status-expired,
 .status-cancelled,
-.status-failed,
 .status-REFUNDED,
+.status-REFUNDING,
 .status-EXPIRED,
-.status-CANCELLED,
+.status-CANCELLED {
+  background: var(--warning-muted);
+  color: var(--warning);
+}
+
+.status-failed,
 .status-FAILED {
   background: var(--danger-muted);
   color: var(--danger);
@@ -1329,6 +1335,40 @@ input::placeholder {
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--border);
   margin-bottom: 0.25rem;
+}
+
+.user-dropdown-wallet {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.user-avatar.wallet-on {
+  box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.55);
+}
+
+.user-wallet-status {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.15rem;
+}
+
+.user-wallet-status.connected {
+  color: var(--success);
+}
+
+.user-connect-wallet {
+  font-weight: 600;
+  color: var(--text) !important;
+}
+
+.user-wallet-error {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--danger);
+  line-height: 1.35;
+  margin: 0.15rem 0 0.25rem;
 }
 
 .user-dropdown-label {

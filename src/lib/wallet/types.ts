@@ -50,6 +50,9 @@ export interface LoopProvider {
 
 export interface WalletTransferInput {
   to: string;
-  instrumentId: string;
   amount: string;
+  /** UI symbol (CC/CBTC/USDCX) — used only when `loopInstrument` is omitted. */
+  instrumentId?: string;
+  /** Preferred: ledger instrument selector from `/v1/deposits/prepare`. */
+  loopInstrument?: LoopInstrumentSpec;
 }

@@ -17,7 +17,7 @@ export async function signIntentPayload(
   }
   if (wallet?.kind === "loop") {
     if (!loopProvider) {
-      throw new Error("Loop wallet not connected. Connect Loop before signing.");
+      throw new Error("Wallet not connected. Connect Wallet before signing.");
     }
     const message = canonicalizeIntentPayload(payload);
     return signWithLoop(loopProvider, message);

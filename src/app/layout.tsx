@@ -3,6 +3,7 @@ import { DM_Sans, Syne } from "next/font/google";
 import type { ReactNode } from "react";
 import { AccessGate } from "../components/AccessGate";
 import { AuthSessionProvider } from "../components/SessionProvider";
+import { auth } from "../auth";
 
 const syne = Syne({
   subsets: ["latin"],
@@ -25,11 +26,13 @@ export const metadata = {
   },
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const session = await auth();
+
   return (
-    <html lang="en" className={`${syne.variable} ${dmSans.variable}`}>
-      <body>
-        <AuthSessionProvider>
+    <html lang="en" className={`${syne.variable} ${dmSans.variable}`} suppressHydrationWarning>
+      <body suppressHydrationWarning>
+        <AuthSessionProvider session={session}>
           <AccessGate>{children}</AccessGate>
         </AuthSessionProvider>
       </body>

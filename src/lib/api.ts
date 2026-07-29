@@ -200,10 +200,19 @@ export async function fetchBalances(appParty: string): Promise<{ balances: Balan
   return api("/v1/balances", { headers: partyHeaders(appParty) });
 }
 
+export interface LoopInstrumentSpec {
+  instrument_id: string;
+  instrument_admin?: string;
+}
+
 export async function prepareDeposit(
   appParty: string,
   body: { instrument: Instrument; amount: string; idempotencyKey: string },
-): Promise<{ deposit: DepositView; depositTo: string }> {
+): Promise<{
+  deposit: DepositView;
+  depositTo: string;
+  loopInstrument: LoopInstrumentSpec;
+}> {
   return api("/v1/deposits/prepare", {
     method: "POST",
     headers: partyHeaders(appParty),

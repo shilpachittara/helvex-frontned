@@ -3,6 +3,7 @@
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
 import { api, fetchWalletProfile } from "../../../lib/api";
+import { isDemoMode } from "../../../lib/demo-mode";
 import { formatAmount } from "../../../lib/format-amount";
 import type { PairId } from "@intent-swap/domain";
 import { PartyAccessBanner } from "../../../components/AccessGate";
@@ -138,7 +139,7 @@ export default function SolverPage() {
         <div className="hero-premium-content">
           <span className="hero-eyebrow">Solver · RFQ Desk</span>
           <h1>
-            Fill maker intents
+            Fill open intents
             <span className="hero-gradient"> atomically</span>
           </h1>
           <p>
@@ -153,12 +154,14 @@ export default function SolverPage() {
           <div className="stat-value">{intents.length}</div>
           <div className="stat-label">Open intents</div>
         </div>
-        <div className="stat-card stat-card-premium">
-          <div className="stat-value stat-value-mono">
-            {solver ? `${solver.slice(0, 14)}…` : "—"}
+        {!isDemoMode() && (
+          <div className="stat-card stat-card-premium">
+            <div className="stat-value stat-value-mono">
+              {solver ? `${solver.slice(0, 14)}…` : "—"}
+            </div>
+            <div className="stat-label">Your trading party</div>
           </div>
-          <div className="stat-label">Your trading party</div>
-        </div>
+        )}
         <div className="stat-card stat-card-premium">
           <div className="stat-value">RFQ</div>
           <div className="stat-label">Matching mode</div>
@@ -173,7 +176,7 @@ export default function SolverPage() {
         onRefresh={() => void refreshBalances()}
       />
 
-      {solver && <PartyAccessBanner partyId={solver} roleLabel="Trading" />}
+      {solver && !isDemoMode() && <PartyAccessBanner partyId={solver} roleLabel="Trading" />}
 
       <section className="panel panel-glass">
         <div className="panel-header">
@@ -197,7 +200,7 @@ export default function SolverPage() {
           <div className="empty-state empty-state-premium">
             <div className="empty-state-icon">✓</div>
             <p>Queue is clear</p>
-            <span className="empty-state-sub">No open intents — check back when makers submit</span>
+            <span className="empty-state-sub">No open intents — check back when users submit</span>
           </div>
         ) : (
           <div className="solver-queue">
@@ -217,7 +220,9 @@ export default function SolverPage() {
                       <strong>{formatAmount(intent.minBuyAmount)}</strong>
                     </span>
                     <span className="solver-maker">
-                      Maker {intent.makerParty.slice(0, 22)}…
+                      {isDemoMode()
+                        ? "User intent"
+                        : `User ${intent.makerParty.slice(0, 22)}…`}
                     </span>
                     {buyAvail != null && (
                       <span className="solver-maker">

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, Suspense } from "react";
 import { fetchKycStatus } from "../../lib/api";
+import { isDemoMode } from "../../lib/demo-mode";
 import { safeCallback } from "../../lib/safe-redirect";
 
 function LoginForm() {
@@ -189,7 +190,7 @@ function LoginForm() {
             <Link href="/setup-password">Set up password</Link>
           </div>
 
-          {process.env.NODE_ENV !== "production" && (
+          {process.env.NODE_ENV !== "production" && !isDemoMode() && (
             <div className="login-demo-hint">
               <p className="section-label">Dev demo (pre-approved)</p>
               <code>maker@demo.local</code> / <code>Demo123!</code>

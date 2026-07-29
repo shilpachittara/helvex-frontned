@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "node scripts/next-start.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "demo:video": "node scripts/demo-video.mjs"
   },
   "dependencies": {
     "@fivenorth/loop-sdk": "^0.13.2",
@@ -23,6 +24,7 @@
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
+    "playwright": "^1.51.0",
     "typescript": "^5.7.2",
     "vitest": "^2"
   },

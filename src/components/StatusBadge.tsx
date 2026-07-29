@@ -18,7 +18,10 @@ function statusClass(status: string): string {
   if (s === "settled") return "status-settled";
   if (["locked", "matched", "settling"].includes(s)) return "status-locked";
   if (["submitted", "lock_pending", "draft"].includes(s)) return "status-submitted";
-  return "status-refunded";
+  // Refunded / refunding are intentional outcomes (yellow), not hard failures.
+  if (["refunded", "refunding", "expired", "cancelled"].includes(s)) return "status-refunded";
+  if (s === "failed") return "status-failed";
+  return "status-submitted";
 }
 
 export function StatusBadge({ status }: { status: string }) {
