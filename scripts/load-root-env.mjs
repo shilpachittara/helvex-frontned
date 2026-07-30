@@ -121,7 +121,13 @@ function isWeakFrontendSecret(v) {
 export function assertFrontendProductionConfig(env = process.env) {
   if (env.NODE_ENV !== "production") return;
   // Skip the compile phase; only enforce when actually serving.
-  if (env.NEXT_PHASE === "phase-production-build") return;
+  // `next.config.mjs` is evaluated during `next build` before NEXT_PHASE is
+  // always set (Vercel/CI), so also detect build via argv / lifecycle.
+  const isNextBuild =
+    env.NEXT_PHASE === "phase-production-build" ||
+    env.npm_lifecycle_event === "build" ||
+    process.argv.includes("build");
+  if (isNextBuild) return;
 
   const errors = [];
   // #4 — secrets must be strong and not the shipped placeholders.

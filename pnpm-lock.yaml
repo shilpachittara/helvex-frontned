@@ -15,8 +15,8 @@ importers:
         specifier: ^0.13.2
         version: 0.13.2(typescript@5.9.3)
       '@intent-swap/domain':
-        specifier: file:../backend/packages/domain
-        version: file:../backend/packages/domain
+        specifier: file:./packages/domain
+        version: file:packages/domain
       '@next/env':
         specifier: ^15.1.2
         version: 15.5.20
@@ -32,6 +32,9 @@ importers:
       react-dom:
         specifier: ^19.0.0
         version: 19.2.7(react@19.2.7)
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^22.20.0
@@ -355,8 +358,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@intent-swap/domain@file:../backend/packages/domain':
-    resolution: {directory: ../backend/packages/domain, type: directory}
+  '@intent-swap/domain@file:packages/domain':
+    resolution: {directory: packages/domain, type: directory}
 
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
@@ -1191,7 +1194,7 @@ snapshots:
   '@img/sharp-win32-x64@0.34.5':
     optional: true
 
-  '@intent-swap/domain@file:../backend/packages/domain':
+  '@intent-swap/domain@file:packages/domain':
     dependencies:
       zod: 3.25.76
 

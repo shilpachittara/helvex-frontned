@@ -1,0 +1,1 @@
+{"version":3,"file":"matching-engine.d.ts","sourceRoot":"","sources":["../../src/interfaces/matching-engine.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,eAAe,EAAE,YAAY,EAAE,MAAM,aAAa,CAAC;AAEjE,MAAM,WAAW,cAAc;IAC7B,eAAe,IAAI,OAAO,CAAC,YAAY,EAAE,CAAC,CAAC;IAC3C,UAAU,CAAC,KAAK,EAAE,eAAe,GAAG,OAAO,CAAC,YAAY,CAAC,CAAC;CAC3D"}
