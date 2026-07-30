@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { submitKycRequest, type ProfileType } from "../../lib/api";
+import { COUNTRIES } from "../../lib/countries";
 
 const PROFILE_TYPES: { value: ProfileType; label: string }[] = [
   { value: "INDIVIDUAL", label: "Individual" },
@@ -11,18 +12,6 @@ const PROFILE_TYPES: { value: ProfileType; label: string }[] = [
   { value: "LIQUIDITY_PROVIDER", label: "Liquidity provider" },
 ];
 
-const COUNTRIES = [
-  { code: "US", name: "United States" },
-  { code: "GB", name: "United Kingdom" },
-  { code: "CH", name: "Switzerland" },
-  { code: "SG", name: "Singapore" },
-  { code: "DE", name: "Germany" },
-  { code: "FR", name: "France" },
-  { code: "CA", name: "Canada" },
-  { code: "AU", name: "Australia" },
-  { code: "JP", name: "Japan" },
-  { code: "HK", name: "Hong Kong" },
-];
 
 export default function KycRequestPage() {
   const [email, setEmail] = useState("");
@@ -41,12 +30,22 @@ export default function KycRequestPage() {
 
   const isInstitutional = profileType !== "INDIVIDUAL";
 
+  /**
+   * Full-page navigation rather than the SDK's modal. The modal renders
+   * verify.didit.me in an iframe, which Brave Shields and most content blockers
+   * drop — the user gets "This content is blocked" with no way forward, and the
+   * SDK cannot detect it to fall back. Didit returns them to /kyc/callback.
+   */
+  function openVerification(url: string) {
+    window.location.assign(url);
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      await submitKycRequest({
+      const { verificationUrl } = await submitKycRequest({
         email,
         fullName,
         countryCode,
@@ -64,6 +63,21 @@ export default function KycRequestPage() {
           : undefined,
         notes: notes || undefined,
       });
+      // Identity verification is hosted by Didit — hand the applicant straight
+      // over to scan their document and take a selfie. Didit returns them to
+      // /kyc/callback when they finish. If the provider isn't configured (local
+      // dev) or was unreachable, fall back to the operator-review message.
+      if (verificationUrl) {
+        // Didit's return URL carries only a session id, so /kyc/callback needs
+        // this to know whose status to poll.
+        try {
+          window.sessionStorage.setItem("helvex.kycEmail", email);
+        } catch {
+          // Storage disabled — the callback falls back to a generic message.
+        }
+        openVerification(verificationUrl);
+        return;
+      }
       setSubmitted(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submission failed");
@@ -100,8 +114,8 @@ export default function KycRequestPage() {
           </Link>
           <h1>Request access</h1>
           <p>
-            Helvex is permissioned. Submit KYC details for operator review. Only approved
-            users can create a password and sign in.
+            Helvex is permissioned. Complete identity verification to open an account —
+            only verified users can create a password and sign in.
           </p>
         </div>
 
@@ -232,6 +246,13 @@ export default function KycRequestPage() {
 
           {error && <div className="alert alert-error">{error}</div>}
 
+          <p className="field-hint">
+            Continuing opens an identity check run by our verification partner,
+            Didit. You will be asked to photograph a government ID and take a
+            live selfie. Your document and biometric data are processed by Didit
+            to confirm your identity and screen against sanctions lists.
+          </p>
+
           <button type="submit" className="btn btn-primary btn-glow" disabled={loading}>
             {loading ? (
               <>
@@ -239,7 +260,7 @@ export default function KycRequestPage() {
                 Submitting…
               </>
             ) : (
-              "Submit KYC request"
+              "Continue to identity verification"
             )}
           </button>
         </form>
