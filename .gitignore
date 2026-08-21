@@ -7,3 +7,7 @@ tsconfig.tsbuildinfo
 .agents/
 .claude/
 skills-lock.json
+
+# env backups (timestamped copies of .env)
+.env.bak.*
+.env.testnet

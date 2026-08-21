@@ -244,6 +244,16 @@ export async function listPendingDeposits(
   return api("/v1/deposits/pending", { headers: partyHeaders(appParty) });
 }
 
+export async function abandonDeposit(
+  appParty: string,
+  depositId: string,
+): Promise<{ deposit: DepositView }> {
+  return api(`/v1/deposits/${encodeURIComponent(depositId)}/abandon`, {
+    method: "POST",
+    headers: partyHeaders(appParty),
+  });
+}
+
 export async function acceptPendingDeposits(
   appParty: string,
 ): Promise<AcceptPendingDepositsResult> {

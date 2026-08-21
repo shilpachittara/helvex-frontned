@@ -357,7 +357,7 @@ a:hover {
   max-width: var(--max-width);
   width: 100%;
   margin: 0 auto;
-  padding: 2rem 1.25rem 4rem;
+  padding: 2.25rem 1.5rem 4.5rem;
 }
 
 .app-footer {
@@ -1788,11 +1788,44 @@ input::placeholder {
   white-space: nowrap;
 }
 
+/* Account desk — consistent vertical rhythm between sections */
+.account-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.account-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.account-section {
+  margin: 0;
+}
+
+.account-section .panel-header {
+  margin-bottom: 1.35rem;
+}
+
+.account-section .panel-subtitle {
+  margin-top: 0.35rem;
+}
+
+.account-sections .fund-ops {
+  gap: 1.5rem;
+}
+
+.account-sections .balance-grid {
+  gap: 1rem;
+}
+
 .account-identity {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0.25rem;
 }
 
 .account-id-row {
@@ -1995,4 +2028,208 @@ input::placeholder {
   padding: 0;
   font: inherit;
   text-decoration: underline;
+}
+
+/* ——— RFQ desk layout (OTC ticket + quote + book) ——— */
+.rfq-desk {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+.rfq-ticket-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .rfq-ticket-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.quote-panel {
+  position: sticky;
+  top: 1.25rem;
+  min-height: 16rem;
+}
+
+.quote-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 2rem 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.quote-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.quote-hero {
+  padding: 1.25rem 1.35rem;
+  border-radius: var(--radius-md);
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.22);
+}
+
+.quote-hero-label {
+  display: block;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+  margin-bottom: 0.4rem;
+}
+
+.quote-hero-value {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+}
+
+.quote-rows .swap-summary-row:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.intent-book {
+  margin-top: 0.25rem;
+}
+
+.intent-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 1.25rem;
+  padding: 0.25rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+}
+
+.intent-tab {
+  flex: 1;
+  min-width: 8rem;
+  padding: 0.65rem 1rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-weight: 560;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.intent-tab:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.intent-tab.active {
+  background: rgba(99, 102, 241, 0.18);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.35);
+}
+
+.intent-list-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.intent-list-grid .intent-card {
+  margin-bottom: 0;
+}
+
+.panel-swap .field,
+.panel-swap .swap-flow-premium {
+  margin-bottom: 1.15rem;
+}
+
+.panel-swap .btn-glow {
+  margin-top: 0.75rem;
+  width: 100%;
+}
+
+.hero-compact h1 {
+  font-size: clamp(1.55rem, 3vw, 2.1rem) !important;
+}
+
+.hero-compact {
+  margin-bottom: 0.25rem;
+  padding-bottom: 1.25rem;
+  gap: 1.5rem;
+}
+
+/* Solver fill cards */
+.solver-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 240px);
+  gap: 1.25rem 1.75rem;
+  align-items: stretch;
+  padding: 1.25rem 1.35rem;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+@media (max-width: 780px) {
+  .solver-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+.solver-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.solver-card-size {
+  margin: 0 0 0.5rem;
+  font-size: 0.9375rem;
+  color: var(--text);
+}
+
+.solver-card-sep {
+  margin: 0 0.45rem;
+  color: var(--text-subtle);
+}
+
+.solver-card-action {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  justify-content: center;
+  padding: 0.85rem 1rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.solver-card-action .btn {
+  width: 100%;
+  margin-top: 0.15rem;
+}
+
+.solver-queue {
+  gap: 1rem;
+}
+
+.rfq-desk .trading-balances,
+.rfq-desk .balances-strip,
+.rfq-desk [class*="balance"] {
+  margin-bottom: 0;
 }

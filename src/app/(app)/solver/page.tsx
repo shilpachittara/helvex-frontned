@@ -1,9 +1,10 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, fetchWalletProfile } from "../../../lib/api";
 import { isDemoMode } from "../../../lib/demo-mode";
+import { normalizeAmount } from "../../../lib/amount";
 import { formatAmount } from "../../../lib/format-amount";
 import type { PairId } from "@intent-swap/domain";
 import { PartyAccessBanner } from "../../../components/AccessGate";
@@ -21,6 +22,7 @@ interface IntentView {
   minBuyAmount: string;
   status: string;
   makerParty: string;
+  deadline?: string;
 }
 
 const TOKEN_COLORS: Record<string, string> = {
@@ -29,6 +31,9 @@ const TOKEN_COLORS: Record<string, string> = {
   USDCx: "#2775ca",
   CC: "#6366f1",
 };
+
+/** Solver fill queue is actionable locks only — never settled/history. */
+const ACTIONABLE = new Set(["LOCKED"]);
 
 function TokenChip({ symbol }: { symbol: string }) {
   const color = TOKEN_COLORS[symbol] ?? "#94a3b8";
@@ -43,14 +48,12 @@ function TokenChip({ symbol }: { symbol: string }) {
 export default function SolverPage() {
   const { data: session } = useSession();
   const [intents, setIntents] = useState<IntentView[]>([]);
-  // The solver identity the backend authorizes against is the trading (app)
-  // party from onboarding — NOT the Loop/canton party on the session. Resolve
-  // it from the wallet profile; fills stay disabled until it loads.
   const [solver, setSolver] = useState<string | null>(null);
   const [buyAmount, setBuyAmount] = useState<Record<string, string>>({});
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const {
     balances,
     loading: balancesLoading,
@@ -67,7 +70,7 @@ export default function SolverPage() {
         if (!cancelled) setSolver(p.appPartyId);
       })
       .catch(() => {
-        /* no trading account yet — solver stays null, fills disabled */
+        /* no trading account yet */
       });
     return () => {
       cancelled = true;
@@ -79,7 +82,8 @@ export default function SolverPage() {
     setError(null);
     try {
       const res = await api<{ intents: IntentView[] }>("/v1/solver/intents");
-      setIntents(res.intents);
+      // Defense in depth: API is LOCKED-only; never show resolved RFQs here.
+      setIntents((res.intents ?? []).filter((i) => ACTIONABLE.has(i.status)));
       await refreshBalances();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load intents");
@@ -89,17 +93,19 @@ export default function SolverPage() {
   }, [refreshBalances]);
 
   useEffect(() => {
-    refresh();
+    void refresh();
   }, [refresh]);
+
+  const openQueue = useMemo(
+    () => intents.filter((i) => ACTIONABLE.has(i.status)),
+    [intents],
+  );
 
   async function fill(intent: IntentView) {
     if (!solver) {
       setError("Activate your trading account before filling intents.");
       return;
     }
-    // Empty/whitespace input intentionally fills at the minimum. But a non-empty
-    // yet invalid value must be REJECTED, not silently coerced to the minimum
-    // (otherwise the solver fills at a price they didn't intend).
     const raw = buyAmount[intent.intentId]?.trim();
     let amount: string;
     if (!raw) {
@@ -107,7 +113,7 @@ export default function SolverPage() {
     } else if (/^\d+(\.\d+)?$/.test(raw)) {
       amount = raw;
     } else {
-      setError("Enter a valid fill amount (a positive number), or leave it blank to fill at the minimum.");
+      setError("Enter a valid fill amount (a positive number), or leave blank for the minimum.");
       return;
     }
     if (Number.parseFloat(amount) <= 0) {
@@ -116,15 +122,21 @@ export default function SolverPage() {
     }
     setLoadingId(intent.intentId);
     setError(null);
+    setNotice(null);
     try {
       await api("/v1/solver/fill", {
         method: "POST",
         body: JSON.stringify({
           intentId: intent.intentId,
           solver,
-          buyAmount: amount,
+          buyAmount: normalizeAmount(amount),
         }),
       });
+      // Drop from queue immediately — creator tracks SETTLED on their desk.
+      setIntents((prev) => prev.filter((i) => i.intentId !== intent.intentId));
+      setNotice(
+        `Fill accepted for ${intent.intentId.slice(0, 8)}… — removed from your queue. The user sees status on Create intent.`,
+      );
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fill failed");
@@ -134,25 +146,25 @@ export default function SolverPage() {
   }
 
   return (
-    <>
+    <div className="rfq-desk">
       <section className="hero-premium hero-compact">
         <div className="hero-premium-content">
-          <span className="hero-eyebrow">Solver · RFQ Desk</span>
+          <span className="hero-eyebrow">Solver · open RFQs only</span>
           <h1>
-            Fill open intents
+            Fill locked intents
             <span className="hero-gradient"> atomically</span>
           </h1>
           <p>
-            Review open swap intents and submit competitive fills. Buy-side liquidity locks on
-            settlement — first valid fill wins.
+            Queue shows <strong>LOCKED</strong> RFQs you can fill. Once filled, the RFQ leaves this
+            desk — the creator tracks MATCHED → SETTLED on their intent book.
           </p>
         </div>
       </section>
 
       <div className="solver-stats solver-stats-premium">
         <div className="stat-card stat-card-premium">
-          <div className="stat-value">{intents.length}</div>
-          <div className="stat-label">Open intents</div>
+          <div className="stat-value">{openQueue.length}</div>
+          <div className="stat-label">Open to fill</div>
         </div>
         {!isDemoMode() && (
           <div className="stat-card stat-card-premium">
@@ -163,8 +175,8 @@ export default function SolverPage() {
           </div>
         )}
         <div className="stat-card stat-card-premium">
-          <div className="stat-value">RFQ</div>
-          <div className="stat-label">Matching mode</div>
+          <div className="stat-value">1st</div>
+          <div className="stat-label">Valid fill wins</div>
         </div>
       </div>
 
@@ -182,12 +194,14 @@ export default function SolverPage() {
         <div className="panel-header">
           <div>
             <h2 className="panel-title">Fill queue</h2>
-            <p className="panel-subtitle">First-fill wins · min buy enforced on-chain</p>
+            <p className="panel-subtitle">
+              Actionable locks only · settled RFQs are not listed here
+            </p>
           </div>
           <button
             type="button"
             className="btn btn-secondary btn-sm"
-            onClick={refresh}
+            onClick={() => void refresh()}
             disabled={refreshing}
           >
             {refreshing ? "Refreshing…" : "Refresh queue"}
@@ -195,43 +209,52 @@ export default function SolverPage() {
         </div>
 
         {error && <div className="alert alert-error">{error}</div>}
+        {notice && <div className="alert alert-success">{notice}</div>}
 
-        {intents.length === 0 && !refreshing ? (
+        {openQueue.length === 0 && !refreshing ? (
           <div className="empty-state empty-state-premium">
             <div className="empty-state-icon">✓</div>
             <p>Queue is clear</p>
-            <span className="empty-state-sub">No open intents — check back when users submit</span>
+            <span className="empty-state-sub">
+              No LOCKED RFQs — filled and settled intents stay on the user&apos;s Create desk
+            </span>
           </div>
         ) : (
           <div className="solver-queue">
-            {intents.map((intent) => {
+            {openQueue.map((intent) => {
               const [sell, buy] = intent.pair.split("_");
               const buyAvail = availableForSymbol(balances, buy);
               return (
-                <div key={intent.intentId} className="solver-row solver-row-premium">
-                  <div className="solver-row-info">
-                    <div className="intent-pair">
-                      <TokenChip symbol={sell} />
-                      <span className="pair-arrow-sm">→</span>
-                      <TokenChip symbol={buy} />
+                <article key={intent.intentId} className="solver-card">
+                  <div className="solver-card-main">
+                    <div className="solver-card-top">
+                      <div className="intent-pair">
+                        <TokenChip symbol={sell} />
+                        <span className="pair-arrow-sm">→</span>
+                        <TokenChip symbol={buy} />
+                      </div>
+                      <StatusBadge status={intent.status} />
                     </div>
-                    <span>
-                      Sell <strong>{formatAmount(intent.sellAmount)}</strong> · Min buy{" "}
-                      <strong>{formatAmount(intent.minBuyAmount)}</strong>
-                    </span>
-                    <span className="solver-maker">
+                    <p className="solver-card-size">
+                      Sell <strong>{formatAmount(intent.sellAmount)}</strong> {sell}
+                      <span className="solver-card-sep">·</span>
+                      Min buy <strong>{formatAmount(intent.minBuyAmount)}</strong> {buy}
+                    </p>
+                    <p className="solver-maker">
                       {isDemoMode()
-                        ? "User intent"
-                        : `User ${intent.makerParty.slice(0, 22)}…`}
-                    </span>
+                        ? "User RFQ"
+                        : `Maker ${intent.makerParty.slice(0, 22)}…`}
+                      <span className="solver-card-sep">·</span>
+                      {intent.intentId.slice(0, 8)}…
+                    </p>
                     {buyAvail != null && (
-                      <span className="solver-maker">
+                      <p className="solver-maker">
                         Your {buy} available: <strong>{formatAmount(buyAvail)}</strong>
-                      </span>
+                      </p>
                     )}
                   </div>
 
-                  <div className="solver-fill-group">
+                  <div className="solver-card-action">
                     <label className="section-label" htmlFor={`fill-${intent.intentId}`}>
                       Your fill ({buy})
                     </label>
@@ -245,26 +268,25 @@ export default function SolverPage() {
                         setBuyAmount((prev) => ({ ...prev, [intent.intentId]: e.target.value }))
                       }
                     />
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm btn-glow"
+                      onClick={() => void fill(intent)}
+                      disabled={loadingId === intent.intentId || !solver}
+                    >
+                      {loadingId === intent.intentId ? (
+                        <span className="spinner" />
+                      ) : (
+                        "Accept fill"
+                      )}
+                    </button>
                   </div>
-
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm btn-glow"
-                    onClick={() => fill(intent)}
-                    disabled={loadingId === intent.intentId || !solver}
-                  >
-                    {loadingId === intent.intentId ? (
-                      <span className="spinner" />
-                    ) : (
-                      "Accept fill"
-                    )}
-                  </button>
-                </div>
+                </article>
               );
             })}
           </div>
         )}
       </section>
-    </>
+    </div>
   );
 }

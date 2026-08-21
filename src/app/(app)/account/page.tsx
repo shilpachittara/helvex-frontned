@@ -13,6 +13,7 @@ import {
   listTransfers,
   listWithdrawals,
   onboardAccount,
+  abandonDeposit,
   prepareDeposit,
   requestWithdrawal,
   revokeApiKey,
@@ -27,7 +28,7 @@ import {
   type WalletProfile,
   type WithdrawalView,
 } from "../../../lib/api";
-import { isValidAmount } from "../../../lib/amount";
+import { isValidAmount, normalizeAmount } from "../../../lib/amount";
 import { isDemoMode } from "../../../lib/demo-mode";
 import { formatAmount } from "../../../lib/format-amount";
 import { formatUtcDate, formatUtcDateTime } from "../../../lib/format-time";
@@ -100,12 +101,17 @@ export default function AccountPage() {
       const reason = failed
         .map((r) => (r.reason instanceof Error ? r.reason.message : String(r.reason)))
         .find(Boolean);
-      const ledgerDenied = /403|security-sensitive|Active contracts/i.test(reason ?? "");
+      const msg = reason ?? "";
+      const ledgerDenied = /403|security-sensitive|Active contracts/i.test(msg);
+      const ledgerUnreachable =
+        /timeout|fetch failed|ECONNREFUSED|ENOTFOUND|UND_ERR_CONNECT|Connect Timeout/i.test(msg);
       setNotice({
         type: "error",
         text: ledgerDenied
           ? "Balances unavailable: ledger user cannot read this party yet (missing CanReadAs). Re-activate or grant rights on the participant, then refresh."
-          : `Some account data could not be loaded${reason ? `: ${reason}` : ""}. Refresh to retry.`,
+          : ledgerUnreachable
+            ? "Ledger unreachable — Canton JSON API timed out. Check validator ELB/security group or run kubectl port-forward to the participant, then refresh."
+            : `Some account data could not be loaded${msg ? `: ${msg}` : ""}. Refresh to retry.`,
       });
     }
   }, []);
@@ -160,7 +166,7 @@ export default function AccountPage() {
   }
 
   return (
-    <>
+    <div className="account-page">
       <section className="hero-premium hero-compact">
         <div className="hero-premium-content">
           <span className="hero-eyebrow">Account · Custody</span>
@@ -183,7 +189,7 @@ export default function AccountPage() {
           <span className="spinner" /> Loading account…
         </div>
       ) : !appParty ? (
-        <section className="panel panel-glass">
+        <section className="panel panel-glass account-section">
           <div className="panel-header">
             <div>
               <h2 className="panel-title">Activate trading account</h2>
@@ -211,8 +217,8 @@ export default function AccountPage() {
           </button>
         </section>
       ) : (
-        <>
-          <section className="panel panel-glass">
+        <div className="account-sections">
+          <section className="panel panel-glass account-section">
             <div className="panel-header">
               <div>
                 <h2 className="panel-title">Identity</h2>
@@ -256,7 +262,7 @@ export default function AccountPage() {
             }}
           />
 
-          <section className="fund-ops">
+          <section className="fund-ops account-section">
             <DepositPanel
               appParty={appParty}
               loopReady={walletKind === "loop" && Boolean(wallet?.partyId)}
@@ -296,9 +302,9 @@ export default function AccountPage() {
             onChanged={refresh}
             setNotice={setNotice}
           />
-        </>
+        </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -313,7 +319,7 @@ function IdRow({ label, value, mono }: { label: string; value: string; mono?: bo
 
 function BalancesPanel({ balances }: { balances: BalanceView[] }) {
   return (
-    <section className="panel panel-glass">
+    <section className="panel panel-glass account-section">
       <div className="panel-header">
         <div>
           <h2 className="panel-title">Trading balances</h2>
@@ -369,8 +375,17 @@ function PendingInboundPanel({
           type: "error",
           text: `Accepted ${result.accepted}, but ${result.failed.length} failed. ${result.failed[0]?.error ?? "Check scan-proxy health."}`,
         });
+      } else if (result.failed.length === 0) {
+        // Nothing was pending. Normal: the transfer may have auto-credited via
+        // the party's TransferPreapproval, or another tab accepted it first.
+        // This is a no-op, not a failure — reporting it as one makes a user who
+        // just moved funds think they vanished.
+        onDone({
+          type: "success",
+          text: "No pending deposits to accept — balances are already up to date.",
+        });
       } else {
-        const hint = result.failed[0]?.error ?? "Unknown error";
+        const hint = result.failed[0]?.error ?? "Accept failed";
         const scanDown = /fetch failed|ECONNREFUSED|Empty reply|scan/i.test(hint);
         onDone({
           type: "error",
@@ -390,7 +405,7 @@ function PendingInboundPanel({
   }
 
   return (
-    <section className="panel panel-glass pending-inbound">
+    <section className="panel panel-glass pending-inbound account-section">
       <div className="panel-header">
         <div>
           <h2 className="panel-title">Pending deposits</h2>
@@ -466,9 +481,9 @@ function DepositPanel({
     }
     setBusy(true);
     try {
-      const { depositTo: to, loopInstrument } = await prepareDeposit(appParty, {
+      const { deposit, depositTo: to, loopInstrument } = await prepareDeposit(appParty, {
         instrument,
-        amount,
+        amount: normalizeAmount(amount),
         idempotencyKey: newIdempotencyKey(),
       });
       setDepositTo(to);
@@ -477,6 +492,10 @@ function DepositPanel({
         onDone({ type: "success", text: "Deposit transfer submitted from Loop." });
         setAmount("");
       } catch (err) {
+        // The row was written by prepare, before Loop signed anything. Retire it
+        // so reconciliation cannot later credit a transfer that never happened.
+        // Best-effort: the deposit error is what the user needs to see.
+        await abandonDeposit(appParty, deposit.id).catch(() => {});
         onDone({
           type: "error",
           text: isDemoMode()
@@ -501,7 +520,7 @@ function DepositPanel({
   }
 
   return (
-    <section className="panel panel-glass fund-ops-card">
+    <section className="panel panel-glass fund-ops-card account-section">
       <div className="panel-header">
         <div>
           <h2 className="panel-title">Deposit</h2>
@@ -584,7 +603,7 @@ function WithdrawPanel({
     try {
       await requestWithdrawal(appParty, {
         instrument,
-        amount,
+        amount: normalizeAmount(amount),
         idempotencyKey: newIdempotencyKey(),
       });
       onDone({ type: "success", text: "Withdrawal requested. Funds return to your Loop party." });
@@ -604,7 +623,7 @@ function WithdrawPanel({
   }
 
   return (
-    <section className="panel panel-glass fund-ops-card">
+    <section className="panel panel-glass fund-ops-card account-section">
       <div className="panel-header">
         <div>
           <h2 className="panel-title">Withdraw</h2>
@@ -680,7 +699,7 @@ function SendPanel({
       await sendTransfer(appParty, {
         recipientEmail: recipientEmail.trim().toLowerCase(),
         instrument,
-        amount,
+        amount: normalizeAmount(amount),
         idempotencyKey: newIdempotencyKey(),
       });
       onDone({ type: "success", text: `Sent ${amount} ${instrument} to ${recipientEmail}.` });
@@ -694,7 +713,7 @@ function SendPanel({
   }
 
   return (
-    <section className="panel panel-glass">
+    <section className="panel panel-glass account-section">
       <div className="panel-header">
         <div>
           <h2 className="panel-title">Send to a user</h2>
@@ -758,7 +777,7 @@ function TransfersHistory({ transfers }: { transfers: TransferView[] }) {
   const visible = transfers.filter((t) => t.status !== "FAILED").slice(0, 10);
   if (visible.length === 0) return null;
   return (
-    <section className="panel panel-glass">
+    <section className="panel panel-glass account-section">
       <div className="panel-header">
         <div>
           <h2 className="panel-title">Recent transfers</h2>
@@ -796,7 +815,7 @@ function WithdrawalsHistory({ withdrawals }: { withdrawals: WithdrawalView[] }) 
   const visible = withdrawals.filter((w) => w.status !== "FAILED").slice(0, 10);
   if (visible.length === 0) return null;
   return (
-    <section className="panel panel-glass">
+    <section className="panel panel-glass account-section">
       <div className="panel-header">
         <div>
           <h2 className="panel-title">Recent withdrawals</h2>
@@ -830,7 +849,7 @@ function DepositsHistory({ deposits }: { deposits: DepositView[] }) {
   const visible = deposits.filter((d) => d.status !== "FAILED").slice(0, 10);
   if (visible.length === 0) return null;
   return (
-    <section className="panel panel-glass">
+    <section className="panel panel-glass account-section">
       <div className="panel-header">
         <div>
           <h2 className="panel-title">Recent deposits</h2>
@@ -918,7 +937,7 @@ function ApiKeysPanel({
   }
 
   return (
-    <section className="panel panel-glass">
+    <section className="panel panel-glass account-section">
       <div className="panel-header">
         <div>
           <h2 className="panel-title">API keys</h2>

@@ -12,7 +12,7 @@ import {
   type QuoteView,
 } from "../../lib/api";
 import { formatAmount } from "../../lib/format-amount";
-import { isValidAmount } from "../../lib/amount";
+import { isValidAmount, normalizeAmount } from "../../lib/amount";
 import { isDemoMode } from "../../lib/demo-mode";
 import { useWallet } from "../../lib/wallet/WalletProvider";
 import type { PairId } from "../../lib/signing";
@@ -117,6 +117,7 @@ export default function HomePage() {
   const [activating, setActivating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [intentTab, setIntentTab] = useState<"open" | "history">("open");
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(
     null,
   );
@@ -332,8 +333,10 @@ export default function HomePage() {
         intentId,
         maker: appParty,
         pair,
-        sellAmount,
-        minBuyAmount,
+        // Normalise BEFORE signing: the amount is part of the canonical signed
+        // payload, so the server cannot trim it without invalidating the signature.
+        sellAmount: normalizeAmount(sellAmount),
+        minBuyAmount: normalizeAmount(minBuyAmount),
         deadline,
         nonce: Date.now(),
       };
@@ -387,41 +390,42 @@ export default function HomePage() {
     }
   }, [session?.user.email, activating]);
 
+  const OPEN_STATUSES = ["SUBMITTED", "LOCK_PENDING", "LOCKED", "MATCHED", "SETTLING"];
+  const HISTORY_STATUSES = ["SETTLED", "EXPIRED", "REFUNDED", "CANCELLED"];
   const visibleIntents = intents.filter((i) => i.status !== "FAILED");
-  const activeIntents = visibleIntents.filter((i) =>
-    ["SUBMITTED", "LOCK_PENDING", "LOCKED", "MATCHED", "SETTLING"].includes(i.status),
-  );
+  const openIntents = visibleIntents.filter((i) => OPEN_STATUSES.includes(i.status));
+  const historyIntents = visibleIntents.filter((i) => HISTORY_STATUSES.includes(i.status));
+  const listedIntents = intentTab === "open" ? openIntents : historyIntents;
   const sellAvailable = selectedPair
     ? availableForSymbol(balances, selectedPair.sell)
     : null;
 
   return (
-    <>
-      <section className="hero-premium">
+    <div className="rfq-desk">
+      <section className="hero-premium hero-compact">
         <div className="hero-premium-content">
-          <span className="hero-eyebrow">Canton Network · Intent Protocol</span>
+          <span className="hero-eyebrow">RFQ desk · Canton DvP</span>
           <h1>
-            Sign what you want,
-            <br />
-            <span className="hero-gradient">not how to get it</span>
+            Request a quote,
+            <span className="hero-gradient"> lock & settle</span>
           </h1>
           <p>
-            Express swap outcomes with a single signature. Sell-side locked on-ledger, solvers
-            compete via private RFQ, settlement is atomic DvP.
+            Submit a signed RFQ. Your sell leg locks on-ledger; solvers compete to fill; settlement
+            is atomic DvP. Only you track status after a fill.
           </p>
         </div>
         <div className="hero-metrics">
           <div className="hero-metric">
-            <span className="hero-metric-value">{activeIntents.length}</span>
-            <span className="hero-metric-label">Active intents</span>
+            <span className="hero-metric-value">{openIntents.length}</span>
+            <span className="hero-metric-label">Open RFQs</span>
+          </div>
+          <div className="hero-metric">
+            <span className="hero-metric-value">{historyIntents.filter((i) => i.status === "SETTLED").length}</span>
+            <span className="hero-metric-label">Settled</span>
           </div>
           <div className="hero-metric">
             <span className="hero-metric-value">{pairs.length || "—"}</span>
-            <span className="hero-metric-label">Live pairs</span>
-          </div>
-          <div className="hero-metric">
-            <span className="hero-metric-value">DvP</span>
-            <span className="hero-metric-label">Settlement</span>
+            <span className="hero-metric-label">Pairs</span>
           </div>
         </div>
       </section>
@@ -437,12 +441,12 @@ export default function HomePage() {
         onRefresh={() => void refreshBalances()}
       />
 
-      <div className="grid-2 grid-2-premium">
+      <div className="rfq-ticket-grid">
         <section className="panel panel-glass panel-swap">
           <div className="panel-header">
             <div>
-              <h2 className="panel-title">New swap intent</h2>
-              <p className="panel-subtitle">You sign once · protocol settles atomically</p>
+              <h2 className="panel-title">1 · Create RFQ</h2>
+              <p className="panel-subtitle">Pair · size · expiry · sign once</p>
             </div>
             {selectedPair && (
               <div className="pair-badge">
@@ -566,59 +570,8 @@ export default function HomePage() {
             </div>
           </div>
 
-          {quote && selectedPair && (
-            <>
-              <div className="swap-summary-row">
-                <span>Rate</span>
-                <span className="swap-summary-value">
-                  1 {selectedPair.sell} ≈ {formatAmount(quote.rate)} {selectedPair.buy}
-                </span>
-              </div>
-              <div className="swap-summary-row">
-                <span>Estimated receive</span>
-                <span className="swap-summary-value">
-                  {formatAmount(quote.estReceive)} {selectedPair.buy}
-                </span>
-              </div>
-              <div className="swap-summary-row">
-                <span>Minimum received</span>
-                <span className="swap-summary-value">
-                  {formatAmount(quote.minReceive)} {selectedPair.buy}
-                </span>
-              </div>
-            </>
-          )}
-          <div className="swap-summary-row">
-            <span>Protocol fee</span>
-            <span className="swap-summary-value">
-              {quote && quote.feeBps > 0 ? `${(quote.feeBps / 100).toFixed(2)}%` : "No fee"}
-            </span>
-          </div>
-          {quoteLoading && <p className="field-hint">Fetching live price…</p>}
-          {quote && !quoteLoading && (
-            <p className="field-hint">
-              Indicative price · refresh before signing (valid ~{quote.ttlSeconds}s).
-            </p>
-          )}
-          {quote && (
-            <p className={`field-hint${quote.withinLimits ? "" : " field-hint-error"}`}>
-              Trade size ≈ ${quote.notionalUsd} · per-trade limit ${quote.minNotionalUsd}–$
-              {quote.maxNotionalUsd}
-              {quote.withinLimits ? "" : " — out of range"}
-            </p>
-          )}
-          {quoteError && (
-            <p className="field-hint">
-              Live price unavailable — enter your minimum manually.
-            </p>
-          )}
-          <p className="field-hint">
-            Your “receive at least” amount is enforced on-ledger — settlement reverts if a solver
-            can’t meet it.
-          </p>
-
           <div className="field">
-            <label htmlFor="ttl">Expires in</label>
+            <label htmlFor="ttl">RFQ expires in</label>
             <select
               id="ttl"
               value={ttlSeconds}
@@ -631,9 +584,8 @@ export default function HomePage() {
               ))}
             </select>
             <p className="field-hint">
-              How long solvers can fill this intent. Max{" "}
-              {ttlLabel(selectedPair?.maxTtlSeconds ?? 86400)}. Unfilled intents auto-refund after
-              expiry.
+              How long solvers may fill. Max {ttlLabel(selectedPair?.maxTtlSeconds ?? 86400)}.
+              Unfilled RFQs refund after expiry.
             </p>
           </div>
 
@@ -652,10 +604,10 @@ export default function HomePage() {
             {loading ? (
               <>
                 <span className="spinner" />
-                Signing intent…
+                Signing RFQ…
               </>
             ) : (
-              "Submit signed intent"
+              "Submit signed RFQ"
             )}
           </button>
 
@@ -672,79 +624,172 @@ export default function HomePage() {
           )}
         </section>
 
-        <section className="panel panel-glass">
+        <aside className="panel panel-glass quote-panel">
           <div className="panel-header">
             <div>
-              <h2 className="panel-title">Your intents</h2>
-              <p className="panel-subtitle">
-                {activeIntents.length} active · {visibleIntents.length} total
-              </p>
+              <h2 className="panel-title">2 · Indicative quote</h2>
+              <p className="panel-subtitle">Live mid · review before you sign</p>
             </div>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={refreshIntents}
-              disabled={refreshing}
-            >
-              {refreshing ? "…" : "Refresh"}
-            </button>
           </div>
 
-          {visibleIntents.length === 0 ? (
+          {!selectedPair ? (
             <div className="empty-state empty-state-premium">
-              <div className="empty-state-icon">◎</div>
-              <p>No intents yet</p>
-              <span className="empty-state-sub">Submit your first swap to start RFQ matching</span>
+              <p>Select a pair</p>
+            </div>
+          ) : quoteLoading && !quote ? (
+            <div className="quote-loading">
+              <span className="spinner" />
+              <span>Fetching live price…</span>
+            </div>
+          ) : quote ? (
+            <div className="quote-body">
+              <div className="quote-hero">
+                <span className="quote-hero-label">Rate</span>
+                <span className="quote-hero-value">
+                  1 {selectedPair.sell} ≈ {formatAmount(quote.rate)} {selectedPair.buy}
+                </span>
+              </div>
+              <div className="quote-rows">
+                <div className="swap-summary-row">
+                  <span>Estimated receive</span>
+                  <span className="swap-summary-value">
+                    {formatAmount(quote.estReceive)} {selectedPair.buy}
+                  </span>
+                </div>
+                <div className="swap-summary-row">
+                  <span>Your minimum</span>
+                  <span className="swap-summary-value">
+                    {formatAmount(minBuyAmount || quote.minReceive)} {selectedPair.buy}
+                  </span>
+                </div>
+                <div className="swap-summary-row">
+                  <span>Protocol fee</span>
+                  <span className="swap-summary-value">
+                    {quote.feeBps > 0 ? `${(quote.feeBps / 100).toFixed(2)}%` : "No fee"}
+                  </span>
+                </div>
+                <div className="swap-summary-row">
+                  <span>Notional</span>
+                  <span className="swap-summary-value">≈ ${quote.notionalUsd}</span>
+                </div>
+              </div>
+              <p className={`field-hint${quote.withinLimits ? "" : " field-hint-error"}`}>
+                Limit ${quote.minNotionalUsd}–${quote.maxNotionalUsd}
+                {quote.withinLimits ? "" : " — out of range"}
+              </p>
+              <p className="field-hint">
+                Indicative · refresh before signing (valid ~{quote.ttlSeconds}s). Minimum is
+                enforced on-ledger.
+              </p>
             </div>
           ) : (
-            <div className="intent-list">
-              {visibleIntents.map((intent) => {
-                const [sell, buy] = intent.pair.split("_");
-                const cancellable = ["SUBMITTED", "LOCK_PENDING", "LOCKED"].includes(
-                  intent.status,
-                );
-                return (
-                  <article key={intent.intentId} className="intent-card intent-card-premium">
-                    <div className="intent-card-top">
-                      <div>
-                        <div className="intent-pair">
-                          <TokenChip symbol={sell} />
-                          <span className="pair-arrow-sm">→</span>
-                          <TokenChip symbol={buy} />
-                        </div>
-                        <div className="intent-amounts">
-                          Sell {formatAmount(intent.sellAmount)} · Min{" "}
-                          {formatAmount(intent.minBuyAmount)}
-                        </div>
-                      </div>
-                      <StatusBadge status={intent.status} />
-                    </div>
-                    <IntentProgress status={intent.status} />
-                    <div className="intent-meta">
-                      <DeadlineLabel iso={intent.deadline} />
-                      <span className="intent-id" title={intent.intentId}>
-                        {intent.intentId.slice(0, 8)}…{intent.intentId.slice(-4)}
-                      </span>
-                    </div>
-                    {cancellable && (
-                      <div className="intent-actions">
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => cancelIntentHandler(intent.intentId)}
-                          disabled={cancellingId === intent.intentId}
-                        >
-                          {cancellingId === intent.intentId ? "Cancelling…" : "Cancel intent"}
-                        </button>
-                      </div>
-                    )}
-                  </article>
-                );
-              })}
+            <div className="empty-state empty-state-premium">
+              <p>{quoteError ? "Live price unavailable" : "Enter a sell amount"}</p>
+              <span className="empty-state-sub">
+                {quoteError
+                  ? "Set your minimum receive manually in the RFQ ticket."
+                  : "Quote appears once size is valid."}
+              </span>
             </div>
           )}
-        </section>
+        </aside>
       </div>
-    </>
+
+      <section className="panel panel-glass intent-book">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">3 · Your RFQs</h2>
+            <p className="panel-subtitle">
+              Status lives on the creator desk · solvers only see open locks
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={refreshIntents}
+            disabled={refreshing}
+          >
+            {refreshing ? "…" : "Refresh"}
+          </button>
+        </div>
+
+        <div className="intent-tabs" role="tablist" aria-label="RFQ lists">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={intentTab === "open"}
+            className={`intent-tab${intentTab === "open" ? " active" : ""}`}
+            onClick={() => setIntentTab("open")}
+          >
+            Open ({openIntents.length})
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={intentTab === "history"}
+            className={`intent-tab${intentTab === "history" ? " active" : ""}`}
+            onClick={() => setIntentTab("history")}
+          >
+            Settled & closed ({historyIntents.length})
+          </button>
+        </div>
+
+        {listedIntents.length === 0 ? (
+          <div className="empty-state empty-state-premium">
+            <div className="empty-state-icon">◎</div>
+            <p>{intentTab === "open" ? "No open RFQs" : "No settled RFQs yet"}</p>
+            <span className="empty-state-sub">
+              {intentTab === "open"
+                ? "Submit an RFQ above — it stays here through lock, fill, and settle"
+                : "Completed and expired RFQs appear here with final status"}
+            </span>
+          </div>
+        ) : (
+          <div className="intent-list intent-list-grid">
+            {listedIntents.map((intent) => {
+              const [sell, buy] = intent.pair.split("_");
+              const cancellable = ["SUBMITTED", "LOCK_PENDING", "LOCKED"].includes(intent.status);
+              return (
+                <article key={intent.intentId} className="intent-card intent-card-premium">
+                  <div className="intent-card-top">
+                    <div>
+                      <div className="intent-pair">
+                        <TokenChip symbol={sell} />
+                        <span className="pair-arrow-sm">→</span>
+                        <TokenChip symbol={buy} />
+                      </div>
+                      <div className="intent-amounts">
+                        Sell {formatAmount(intent.sellAmount)} · Min{" "}
+                        {formatAmount(intent.minBuyAmount)}
+                      </div>
+                    </div>
+                    <StatusBadge status={intent.status} />
+                  </div>
+                  <IntentProgress status={intent.status} />
+                  <div className="intent-meta">
+                    <DeadlineLabel iso={intent.deadline} />
+                    <span className="intent-id" title={intent.intentId}>
+                      {intent.intentId.slice(0, 8)}…{intent.intentId.slice(-4)}
+                    </span>
+                  </div>
+                  {cancellable && (
+                    <div className="intent-actions">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => cancelIntentHandler(intent.intentId)}
+                        disabled={cancellingId === intent.intentId}
+                      >
+                        {cancellingId === intent.intentId ? "Cancelling…" : "Cancel RFQ"}
+                      </button>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
