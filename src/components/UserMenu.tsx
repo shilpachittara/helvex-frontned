@@ -14,7 +14,7 @@ function shortParty(partyId: string): string {
 
 export function UserMenu() {
   const { data: session } = useSession();
-  const { kind, status, wallet, error, connect, disconnect } = useWallet();
+  const { kind, status, wallet, error, linkState, connect, disconnect } = useWallet();
   if (!session?.user) return null;
 
   const demo = isDemoMode();
@@ -63,7 +63,13 @@ export function UserMenu() {
                   title={demo ? "Wallet connected" : wallet.partyId}
                 >
                   {demo ? "Connected" : shortParty(wallet.partyId)}
+                  {linkState === "link_failed" && " · link failed"}
                 </span>
+                {linkState === "link_failed" && error && (
+                  <span className="user-wallet-error" title={error}>
+                    {error.length > 64 ? `${error.slice(0, 64)}…` : error}
+                  </span>
+                )}
                 <button
                   type="button"
                   className="user-dropdown-link"
@@ -98,6 +104,9 @@ export function UserMenu() {
 
         <Link href="/" className="user-dropdown-link">
           Trading desk
+        </Link>
+        <Link href="/account" className="user-dropdown-link">
+          Account &amp; wallet
         </Link>
         <Link href="/solver" className="user-dropdown-link">
           Solver desk

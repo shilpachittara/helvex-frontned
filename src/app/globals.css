@@ -2233,3 +2233,36 @@ input::placeholder {
 .rfq-desk [class*="balance"] {
   margin-bottom: 0;
 }
+
+/* ---- Loop wallet card (account page) ---- */
+.wallet-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 0.45rem;
+  vertical-align: baseline;
+  background: var(--text-tertiary, #8b8b96);
+}
+.wallet-dot.on {
+  background: #34d399;
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.6);
+}
+.wallet-dot.mid {
+  background: #fbbf24;
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.5);
+}
+.wallet-party {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.copy-btn {
+  padding: 0.1rem 0.55rem;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+.fund-ops-meta .copy-btn {
+  margin-left: 0.35rem;
+}

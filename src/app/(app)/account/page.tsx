@@ -41,6 +41,14 @@ function newIdempotencyKey(): string {
   return crypto.randomUUID().replace(/-/g, "");
 }
 
+/** Loop wallet web app for the configured network — where transfers are approved. */
+function loopWalletUrl(): string {
+  const network = (process.env.NEXT_PUBLIC_LOOP_NETWORK ?? "").trim().toLowerCase();
+  if (network === "mainnet") return "https://wallet.cantonloop.com";
+  if (network === "devnet") return "https://wallet.dev.cantonloop.com";
+  return "https://wallet.test.cantonloop.com";
+}
+
 /** Compact party id for UI footers (full value stays in title/tooltip). */
 function shortPartyId(partyId: string): string {
   const parts = partyId.split("::");
@@ -55,7 +63,13 @@ type Notice = { type: "success" | "error"; text: string } | null;
 
 export default function AccountPage() {
   const { data: session } = useSession();
-  const { transfer, kind: walletKind, wallet } = useWallet();
+  const {
+    transfer,
+    kind: walletKind,
+    wallet,
+    status: walletStatus,
+    connect: connectWallet,
+  } = useWallet();
   const email = session?.user.email ?? null;
 
   const [profile, setProfile] = useState<WalletProfile | null>(null);
@@ -189,35 +203,42 @@ export default function AccountPage() {
           <span className="spinner" /> Loading account…
         </div>
       ) : !appParty ? (
-        <section className="panel panel-glass account-section">
-          <div className="panel-header">
-            <div>
-              <h2 className="panel-title">Activate trading account</h2>
-              <p className="panel-subtitle">
-                Provision an app party on our validator to deposit and trade.
-              </p>
+        <div className="account-sections">
+          <WalletCard profile={profile} onLinked={loadProfile} />
+
+          <section className="panel panel-glass account-section">
+            <div className="panel-header">
+              <div>
+                <h2 className="panel-title">Activate trading account</h2>
+                <p className="panel-subtitle">
+                  Provision an app party on our validator to deposit and trade.
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="account-identity">
-            <IdRow label="Login" value={email ?? "—"} />
-            <IdRow label="Linked Loop party" value={profile?.loopPartyId ?? profile?.cantonPartyId ?? "Not linked"} />
-          </div>
-          {!profile?.loopPartyId && !profile?.cantonPartyId && (
-            <p className="field-hint">
-              Connect Wallet from the account menu so withdrawals can be locked to your address.
-            </p>
-          )}
-          <button
-            type="button"
-            className="btn btn-primary btn-glow"
-            onClick={activate}
-            disabled={activating}
-          >
-            {activating ? "Activating…" : "Activate trading account"}
-          </button>
-        </section>
+            <div className="account-identity">
+              <IdRow label="Login" value={email ?? "—"} />
+              <IdRow label="Linked Loop party" value={profile?.loopPartyId ?? profile?.cantonPartyId ?? "Not linked"} />
+            </div>
+            {!profile?.loopPartyId && !profile?.cantonPartyId && (
+              <p className="field-hint">
+                Connect your Loop wallet above so withdrawals can be locked to your address. You
+                can also activate now and connect later.
+              </p>
+            )}
+            <button
+              type="button"
+              className="btn btn-primary btn-glow"
+              onClick={activate}
+              disabled={activating}
+            >
+              {activating ? "Activating…" : "Activate trading account"}
+            </button>
+          </section>
+        </div>
       ) : (
         <div className="account-sections">
+          <WalletCard profile={profile} onLinked={loadProfile} />
+
           <section className="panel panel-glass account-section">
             <div className="panel-header">
               <div>
@@ -266,7 +287,10 @@ export default function AccountPage() {
             <DepositPanel
               appParty={appParty}
               loopReady={walletKind === "loop" && Boolean(wallet?.partyId)}
+              connecting={walletStatus === "connecting"}
+              onConnect={connectWallet}
               transfer={transfer}
+              onRefresh={refresh}
               onDone={async (n) => {
                 setNotice(n);
                 await refresh();
@@ -275,6 +299,8 @@ export default function AccountPage() {
             <WithdrawPanel
               appParty={appParty}
               destination={profile?.loopPartyId ?? profile?.cantonPartyId ?? null}
+              connecting={walletStatus === "connecting"}
+              onConnect={connectWallet}
               onDone={async (n) => {
                 setNotice(n);
                 await refresh();
@@ -314,6 +340,129 @@ function IdRow({ label, value, mono }: { label: string; value: string; mono?: bo
       <span className="account-id-label">{label}</span>
       <span className={mono ? "input-mono account-id-value" : "account-id-value"}>{value}</span>
     </div>
+  );
+}
+
+function CopyButton({ value, label }: { value: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="btn btn-ghost btn-sm copy-btn"
+      onClick={() => {
+        void navigator.clipboard.writeText(value).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1600);
+        });
+      }}
+    >
+      {copied ? "Copied ✓" : (label ?? "Copy")}
+    </button>
+  );
+}
+
+/**
+ * One clear place for everything Loop: connection status, the linked withdraw
+ * destination, connect/disconnect, and link errors. Everything below (deposit,
+ * withdraw) depends on the state shown here.
+ */
+function WalletCard({
+  profile,
+  onLinked,
+}: {
+  profile: WalletProfile | null;
+  onLinked: () => Promise<WalletProfile | undefined>;
+}) {
+  const { kind, status, wallet, error, linkMessage, linkState, connect, disconnect } = useWallet();
+  const demo = isDemoMode();
+
+  // A successful link updates loopPartyId server-side — pull the fresh profile
+  // so the "Linked Loop party" rows on this page update without a reload.
+  useEffect(() => {
+    if (linkState === "linked") void onLinked();
+  }, [linkState, onLinked]);
+
+  if (kind !== "loop") return null;
+
+  const connected = status === "connected" && Boolean(wallet?.partyId);
+  const linkedParty = profile?.loopPartyId ?? profile?.cantonPartyId ?? null;
+
+  return (
+    <section className="panel panel-glass account-section wallet-card">
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">Loop wallet</h2>
+          <p className="panel-subtitle">
+            Deposits are approved in Loop; withdrawals return to your linked Loop party
+          </p>
+        </div>
+        {connected ? (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={disconnect}>
+            Disconnect
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => void connect()}
+            disabled={status === "connecting"}
+          >
+            {status === "connecting" ? "Connecting…" : "Connect Loop Wallet"}
+          </button>
+        )}
+      </div>
+
+      <div className="account-identity">
+        <div className="account-id-row">
+          <span className="account-id-label">Status</span>
+          <span className="account-id-value">
+            <span className={`wallet-dot ${connected ? "on" : status === "connecting" ? "mid" : "off"}`} />
+            {connected
+              ? linkState === "linking"
+                ? "Connected — linking to your account…"
+                : "Connected"
+              : status === "connecting"
+                ? "Waiting for Loop popup…"
+                : "Not connected"}
+          </span>
+        </div>
+        {connected && wallet?.partyId && !demo && (
+          <div className="account-id-row">
+            <span className="account-id-label">Loop party</span>
+            <span className="account-id-value input-mono wallet-party" title={wallet.partyId}>
+              {shortPartyId(wallet.partyId)}
+              <CopyButton value={wallet.partyId} />
+            </span>
+          </div>
+        )}
+        <div className="account-id-row">
+          <span className="account-id-label">Withdraw destination</span>
+          {linkedParty && !demo ? (
+            <span className="account-id-value input-mono wallet-party" title={linkedParty}>
+              {shortPartyId(linkedParty)}
+              <CopyButton value={linkedParty} />
+            </span>
+          ) : (
+            <span className="account-id-value">
+              {demo && linkedParty ? "Linked (hidden in demo)" : "Not linked — connect to link it"}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {error && <div className="alert alert-error">{error}</div>}
+      {!error && linkMessage && linkState !== "linked" && (
+        <div className="alert alert-info">{linkMessage}</div>
+      )}
+
+      {!connected && status !== "connecting" && (
+        <p className="field-hint">
+          Click <strong>Connect Loop Wallet</strong> and approve in the Loop popup (allow popups
+          for this site). Use the same email as your Helvex login — the wallet links
+          automatically and becomes your locked withdrawal destination.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -447,22 +596,29 @@ function PendingInboundPanel({
 function DepositPanel({
   appParty,
   loopReady,
+  connecting,
+  onConnect,
   transfer,
+  onRefresh,
   onDone,
 }: {
   appParty: string;
   loopReady: boolean;
+  connecting: boolean;
+  onConnect: () => Promise<void>;
   transfer: (input: {
     to: string;
     amount: string;
     instrumentId?: string;
     loopInstrument?: { instrument_id: string; instrument_admin?: string };
   }) => Promise<void>;
+  onRefresh: () => Promise<void>;
   onDone: (n: Notice) => void;
 }) {
   const [instrument, setInstrument] = useState<Instrument>("CC");
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
+  const [awaitingLoop, setAwaitingLoop] = useState(false);
   const [depositTo, setDepositTo] = useState<string | null>(null);
 
   async function submit() {
@@ -470,27 +626,27 @@ function DepositPanel({
       onDone({ type: "error", text: "Enter a valid amount greater than zero." });
       return;
     }
-    if (!loopReady) {
-      onDone({
-        type: "error",
-        text: isDemoMode()
-          ? "Connect Wallet from the account menu, then deposit."
-          : "Connect Wallet from the account menu before depositing.",
-      });
-      return;
-    }
     setBusy(true);
     try {
+      const sendAmount = normalizeAmount(amount);
       const { deposit, depositTo: to, loopInstrument } = await prepareDeposit(appParty, {
         instrument,
-        amount: normalizeAmount(amount),
+        amount: sendAmount,
         idempotencyKey: newIdempotencyKey(),
       });
       setDepositTo(to);
+      setAwaitingLoop(true);
       try {
-        await transfer({ to, amount, instrumentId: instrument, loopInstrument });
-        onDone({ type: "success", text: "Deposit transfer submitted from Loop." });
+        await transfer({ to, amount: sendAmount, instrumentId: instrument, loopInstrument });
+        onDone({
+          type: "success",
+          text: "Deposit submitted from Loop. Funds are accepted automatically and usually appear in your trading balance within ~30 seconds.",
+        });
         setAmount("");
+        // The inbound sweep credits shortly after Loop settles — refresh so the
+        // balance shows up without the user hunting for a refresh button.
+        setTimeout(() => void onRefresh(), 12_000);
+        setTimeout(() => void onRefresh(), 40_000);
       } catch (err) {
         // The row was written by prepare, before Loop signed anything. Retire it
         // so reconciliation cannot later credit a transfer that never happened.
@@ -501,7 +657,7 @@ function DepositPanel({
           text: isDemoMode()
             ? "Deposit needs Loop approval — open the Loop popup and confirm the transfer."
             : err instanceof Error
-              ? `Prepared. Loop transfer failed: ${err.message}. Send ${amount} ${instrument} to ${to} manually.`
+              ? `Loop transfer failed: ${err.message}. You can also send ${sendAmount} ${instrument} from the Loop app to your trading party (address below).`
               : "Loop transfer failed.",
         });
       }
@@ -516,6 +672,7 @@ function DepositPanel({
       });
     } finally {
       setBusy(false);
+      setAwaitingLoop(false);
     }
   }
 
@@ -554,18 +711,47 @@ function DepositPanel({
           />
         </div>
       </div>
-      <button
-        type="button"
-        className="btn btn-primary fund-ops-btn"
-        onClick={submit}
-        disabled={busy || !isValidAmount(amount)}
-      >
-        {busy ? <span className="spinner" /> : loopReady ? "Deposit from Loop" : "Prepare deposit"}
-      </button>
+      {loopReady ? (
+        <button
+          type="button"
+          className="btn btn-primary fund-ops-btn"
+          onClick={submit}
+          disabled={busy || !isValidAmount(amount)}
+        >
+          {busy ? (
+            <>
+              <span className="spinner" />
+              {awaitingLoop ? " Waiting for Loop approval…" : " Preparing…"}
+            </>
+          ) : (
+            "Deposit from Loop"
+          )}
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="btn btn-primary fund-ops-btn"
+          onClick={() => void onConnect()}
+          disabled={connecting}
+        >
+          {connecting ? "Connecting…" : "Connect Loop Wallet to deposit"}
+        </button>
+      )}
+      {awaitingLoop && (
+        <div className="alert alert-info">
+          <strong>Go to your Loop app and approve the transaction.</strong>{" "}
+          <a href={loopWalletUrl()} target="_blank" rel="noreferrer">
+            Open Loop
+          </a>{" "}
+          and approve the pending transfer to complete your deposit. Your balance updates here
+          automatically once it settles.
+        </div>
+      )}
       {!isDemoMode() && (
         <p className="fund-ops-meta" title={depositTo ?? appParty}>
-          <span>To trading party</span>
+          <span>Or send from the Loop app to</span>
           <code>{shortPartyId(depositTo ?? appParty)}</code>
+          <CopyButton value={depositTo ?? appParty} label="Copy address" />
         </p>
       )}
     </section>
@@ -575,10 +761,14 @@ function DepositPanel({
 function WithdrawPanel({
   appParty,
   destination,
+  connecting,
+  onConnect,
   onDone,
 }: {
   appParty: string;
   destination: string | null;
+  connecting: boolean;
+  onConnect: () => Promise<void>;
   onDone: (n: Notice) => void;
 }) {
   const [instrument, setInstrument] = useState<Instrument>("CC");
@@ -593,9 +783,7 @@ function WithdrawPanel({
     if (!destination) {
       onDone({
         type: "error",
-        text: isDemoMode()
-          ? "Connect Wallet from the account menu, then withdraw."
-          : "Connect Wallet from the account menu before withdrawing.",
+        text: "No linked Loop party yet — connect your Loop wallet first so we know where to send funds.",
       });
       return;
     }
@@ -657,17 +845,28 @@ function WithdrawPanel({
           />
         </div>
       </div>
-      <button
-        type="button"
-        className="btn btn-primary fund-ops-btn"
-        onClick={submit}
-        disabled={busy || !isValidAmount(amount) || !destination}
-      >
-        {busy ? <span className="spinner" /> : "Request withdrawal"}
-      </button>
+      {destination ? (
+        <button
+          type="button"
+          className="btn btn-primary fund-ops-btn"
+          onClick={submit}
+          disabled={busy || !isValidAmount(amount)}
+        >
+          {busy ? <span className="spinner" /> : "Request withdrawal"}
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="btn btn-primary fund-ops-btn"
+          onClick={() => void onConnect()}
+          disabled={connecting}
+        >
+          {connecting ? "Connecting…" : "Connect Loop Wallet to withdraw"}
+        </button>
+      )}
       <p className="fund-ops-meta" title={destination ?? undefined}>
         <span>To Loop (locked)</span>
-        <code>{destination ? shortPartyId(destination) : "Connect Wallet first"}</code>
+        <code>{destination ? shortPartyId(destination) : "No linked Loop party yet"}</code>
       </p>
     </section>
   );

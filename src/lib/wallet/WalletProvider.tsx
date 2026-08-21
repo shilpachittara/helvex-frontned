@@ -31,6 +31,7 @@ import type {
   LoopProvider,
   WalletContextValue,
   WalletKind,
+  WalletLinkState,
   WalletStatus,
   WalletTransferInput,
 } from "./types";
@@ -50,6 +51,7 @@ export function WalletProvider({
   const [wallet, setWallet] = useState<ConnectedWallet | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [linkMessage, setLinkMessage] = useState<string | null>(null);
+  const [linkState, setLinkState] = useState<WalletLinkState>("unlinked");
   const providerRef = useRef<LoopProvider | null>(null);
 
   const linkAccountWallet = useCallback(
@@ -58,16 +60,19 @@ export function WalletProvider({
       const loopEmail = emailFromProvider(provider)?.trim().toLowerCase();
       const partyId = partyFromProvider(provider);
       const loginEmail = accountEmail.trim().toLowerCase();
+      setLinkState("linking");
       // Demo recordings often use a Helvex login that differs from the Loop
       // account email — still link the party so deposit/withdraw work on camera.
       if (!isDemoMode()) {
         if (!loopEmail) {
+          setLinkState("link_failed");
           setLinkMessage(
             "Loop connected, but no email returned — link your Loop account email to your login.",
           );
           return;
         }
         if (loopEmail !== loginEmail) {
+          setLinkState("link_failed");
           setError(
             `Loop wallet (${loopEmail}) does not match your login (${accountEmail}). Sign in with the same email as your Loop account.`,
           );
@@ -80,6 +85,7 @@ export function WalletProvider({
           cantonPartyId: partyId,
           loopEmail: loopEmail || loginEmail,
         });
+        setLinkState("linked");
         setLinkMessage(
           isDemoMode()
             ? "Loop wallet connected"
@@ -87,6 +93,7 @@ export function WalletProvider({
         );
         setError(null);
       } catch (err) {
+        setLinkState("link_failed");
         setLinkMessage(null);
         setError(
           isDemoMode()
@@ -185,6 +192,7 @@ export function WalletProvider({
     setStatus("disconnected");
     setError(null);
     setLinkMessage(null);
+    setLinkState("unlinked");
   }, [kind]);
 
   const signIntent = useCallback(
@@ -228,12 +236,13 @@ export function WalletProvider({
       wallet,
       error,
       linkMessage,
+      linkState,
       connect,
       disconnect,
       signIntent,
       transfer,
     }),
-    [kind, status, wallet, error, linkMessage, connect, disconnect, signIntent, transfer],
+    [kind, status, wallet, error, linkMessage, linkState, connect, disconnect, signIntent, transfer],
   );
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

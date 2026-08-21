@@ -4,6 +4,14 @@ export type WalletKind = "dev" | "loop";
 
 export type WalletStatus = "disconnected" | "connecting" | "connected";
 
+/**
+ * Outcome of linking the connected Loop party to the Helvex account
+ * (POST /v1/auth/link-loop-wallet). Separate from `status`: the SDK can be
+ * connected while the link failed (e.g. email mismatch), which blocks
+ * withdrawals — the UI must be able to show that state.
+ */
+export type WalletLinkState = "unlinked" | "linking" | "linked" | "link_failed";
+
 export interface ConnectedWallet {
   kind: WalletKind;
   partyId: string;
@@ -16,6 +24,7 @@ export interface WalletContextValue {
   wallet: ConnectedWallet | null;
   error: string | null;
   linkMessage: string | null;
+  linkState: WalletLinkState;
   connect: () => Promise<void>;
   disconnect: () => void;
   signIntent: (payload: CanonicalIntentPayload) => Promise<string>;
