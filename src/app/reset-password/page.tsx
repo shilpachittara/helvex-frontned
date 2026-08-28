@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
-import { setupPassword } from "../../lib/api";
+import { resetPassword } from "../../lib/api";
 
-function SetupPasswordForm() {
+function ResetPasswordForm() {
   const params = useSearchParams();
   const router = useRouter();
   const tokenFromLink = (params.get("token") ?? "").trim().toUpperCase();
@@ -17,7 +17,6 @@ function SetupPasswordForm() {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Email deep-link already carries the code — keep the field but make it quieter.
   const codeFromEmailLink = /^[A-Z0-9]{6}$/.test(tokenFromLink);
 
   useEffect(() => {
@@ -35,11 +34,11 @@ function SetupPasswordForm() {
     setLoading(true);
     setError(null);
     try {
-      await setupPassword({ email, token: token.trim().toUpperCase(), password });
+      await resetPassword({ email, token: token.trim().toUpperCase(), password });
       setDone(true);
       redirectTimer.current = setTimeout(() => router.push("/login"), 2000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Setup failed");
+      setError(err instanceof Error ? err.message : "Reset failed");
     } finally {
       setLoading(false);
     }
@@ -50,7 +49,7 @@ function SetupPasswordForm() {
       <div className="auth-page-center">
         <div className="login-card">
           <div className="login-card-header">
-            <h1>Password created</h1>
+            <h1>Password updated</h1>
             <p>Redirecting you to sign in…</p>
           </div>
         </div>
@@ -65,19 +64,19 @@ function SetupPasswordForm() {
           <Link href="/login" className="auth-back-link">
             ← Sign in
           </Link>
-          <h1>Create your password</h1>
+          <h1>Reset your password</h1>
           <p>
             {codeFromEmailLink
-              ? "Your verification code is filled in from the email link. Set a password to activate your account."
-              : "Enter the 6-character code from your approval email, then choose a password. Lost the email? Use Forgot password."}
+              ? "Your reset code is filled in from the email link. Choose a new password — the code expires in one hour."
+              : "Enter the 6-character code from your reset email, then choose a new password. Codes expire in one hour."}
           </p>
         </div>
 
         <form onSubmit={onSubmit} className="login-form">
           <div className="field">
-            <label htmlFor="setup-email">Approved email</label>
+            <label htmlFor="reset-email">Email</label>
             <input
-              id="setup-email"
+              id="reset-email"
               type="email"
               required
               value={email}
@@ -85,9 +84,9 @@ function SetupPasswordForm() {
             />
           </div>
           <div className="field">
-            <label htmlFor="setup-token">Verification code</label>
+            <label htmlFor="reset-token">Reset code</label>
             <input
-              id="setup-token"
+              id="reset-token"
               required
               value={token}
               onChange={(e) => setToken(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))}
@@ -101,9 +100,9 @@ function SetupPasswordForm() {
             />
           </div>
           <div className="field">
-            <label htmlFor="setup-password">New password</label>
+            <label htmlFor="reset-password">New password</label>
             <input
-              id="setup-password"
+              id="reset-password"
               type="password"
               required
               minLength={8}
@@ -112,9 +111,9 @@ function SetupPasswordForm() {
             />
           </div>
           <div className="field">
-            <label htmlFor="setup-confirm">Confirm password</label>
+            <label htmlFor="reset-confirm">Confirm password</label>
             <input
-              id="setup-confirm"
+              id="reset-confirm"
               type="password"
               required
               minLength={8}
@@ -132,20 +131,20 @@ function SetupPasswordForm() {
                 Saving…
               </>
             ) : (
-              "Activate account"
+              "Update password"
             )}
           </button>
         </form>
 
         <div className="login-auth-links">
-          <Link href="/forgot-password">Resend code</Link>
+          <Link href="/forgot-password">Request a new code</Link>
         </div>
       </div>
     </div>
   );
 }
 
-export default function SetupPasswordPage() {
+export default function ResetPasswordPage() {
   return (
     <Suspense
       fallback={
@@ -154,7 +153,7 @@ export default function SetupPasswordPage() {
         </div>
       }
     >
-      <SetupPasswordForm />
+      <ResetPasswordForm />
     </Suspense>
   );
 }

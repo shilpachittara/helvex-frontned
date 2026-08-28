@@ -44,9 +44,9 @@ function newIdempotencyKey(): string {
 /** Loop wallet web app for the configured network — where transfers are approved. */
 function loopWalletUrl(): string {
   const network = (process.env.NEXT_PUBLIC_LOOP_NETWORK ?? "").trim().toLowerCase();
-  if (network === "mainnet") return "https://wallet.cantonloop.com";
-  if (network === "devnet") return "https://wallet.dev.cantonloop.com";
-  return "https://wallet.test.cantonloop.com";
+  if (network === "mainnet") return "https://cantonloop.com";
+  if (network === "devnet") return "https://devnet.cantonloop.com";
+  return "https://testnet.cantonloop.com";
 }
 
 /** Compact party id for UI footers (full value stays in title/tooltip). */
@@ -739,7 +739,7 @@ function DepositPanel({
       )}
       {awaitingLoop && (
         <div className="alert alert-info">
-          <strong>Go to your Loop app and approve the transaction.</strong>{" "}
+          <strong>Go to your Loop wallet and approve the transaction.</strong>{" "}
           <a href={loopWalletUrl()} target="_blank" rel="noreferrer">
             Open Loop
           </a>{" "}

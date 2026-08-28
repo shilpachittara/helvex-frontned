@@ -425,6 +425,18 @@ export async function setupPassword(body: {
   return api("/v1/auth/setup-password", { method: "POST", body: JSON.stringify(body) });
 }
 
+export async function forgotPassword(body: { email: string }): Promise<{ ok: boolean }> {
+  return api("/v1/auth/forgot-password", { method: "POST", body: JSON.stringify(body) });
+}
+
+export async function resetPassword(body: {
+  email: string;
+  token: string;
+  password: string;
+}): Promise<{ ok: boolean }> {
+  return api("/v1/auth/reset-password", { method: "POST", body: JSON.stringify(body) });
+}
+
 export async function fetchAdminKycRequests(
   adminKey: string,
   status?: "SUBMITTED" | "APPROVED" | "REJECTED",

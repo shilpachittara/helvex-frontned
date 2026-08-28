@@ -122,14 +122,14 @@ export default function KycRequestPage() {
         <form onSubmit={onSubmit} className="login-form">
           <div className="field-row">
             <div className="field">
-              <label htmlFor="kyc-email">Work email</label>
+              <label htmlFor="kyc-email">Email</label>
               <input
                 id="kyc-email"
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@institution.com"
+                placeholder="you@example.com"
               />
             </div>
             <div className="field">

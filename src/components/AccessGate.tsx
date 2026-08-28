@@ -14,7 +14,7 @@ import { fetchAccessCheck, fetchAccessSession, type AccessCheck, type AccessSess
 const AccessContext = createContext<AccessSession | null>(null);
 
 /** Auth/onboarding routes that must render even if the access API is down. */
-const PUBLIC_PREFIXES = ["/login", "/kyc", "/setup-password"];
+const PUBLIC_PREFIXES = ["/login", "/kyc", "/setup-password", "/forgot-password", "/reset-password"];
 
 function isPublicPath(pathname: string | null): boolean {
   if (!pathname) return false;
