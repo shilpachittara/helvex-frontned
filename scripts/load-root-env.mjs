@@ -86,7 +86,7 @@ export function applyDerivedEnv(env) {
     env.AUTH_SECRET = "dev-auth-secret-change-in-production";
   }
   if (!env.INTENT_SIGNATURE_MODE) {
-    env.INTENT_SIGNATURE_MODE = "hybrid";
+    env.INTENT_SIGNATURE_MODE = "session";
   }
   return env;
 }
@@ -150,15 +150,25 @@ export function assertFrontendProductionConfig(env = process.env) {
       "AUTH_URL (or NEXTAUTH_URL) must be set in production so NextAuth derives callback/redirect URLs from a pinned origin, not the attacker-influenceable Host header.",
     );
   }
-  // X-4 — never ship the forgeable dev signer on mainnet.
+  // Mainnet: Loop wallet for deposit/withdraw; session intent hashes for trades
+  // (Temple custody — same as TestNet). Do not require Loop signatures per trade.
   if ((env.NEXT_PUBLIC_CANTON_NETWORK ?? "").toLowerCase() === "mainnet") {
     if ((env.NEXT_PUBLIC_WALLET_PROVIDER ?? "dev").toLowerCase() !== "loop") {
       errors.push(
-        "NEXT_PUBLIC_WALLET_PROVIDER must be 'loop' on mainnet. The 'dev' signer produces a forgeable dev:<sha256> value with no cryptographic authorization.",
+        "NEXT_PUBLIC_WALLET_PROVIDER must be 'loop' on mainnet (deposit/withdraw). Intent signing uses NEXT_PUBLIC_INTENT_SIGNATURE_MODE=session.",
       );
     }
-    if ((env.INTENT_SIGNATURE_MODE ?? "").toLowerCase() === "dev") {
-      errors.push("INTENT_SIGNATURE_MODE must not be 'dev' on mainnet (use 'loop').");
+    const backendSig = (env.INTENT_SIGNATURE_MODE ?? "session").toLowerCase();
+    if (backendSig === "dev") {
+      errors.push(
+        "INTENT_SIGNATURE_MODE must not be 'dev' on mainnet — use 'session' (Temple custody / session-auth intents).",
+      );
+    }
+    const intentSig = (env.NEXT_PUBLIC_INTENT_SIGNATURE_MODE ?? "session").toLowerCase();
+    if (intentSig === "loop") {
+      errors.push(
+        "NEXT_PUBLIC_INTENT_SIGNATURE_MODE=loop is not the product path on mainnet (Loop signatures cost CC per trade). Use 'session'.",
+      );
     }
   }
 

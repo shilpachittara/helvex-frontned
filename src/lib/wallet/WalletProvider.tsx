@@ -23,7 +23,7 @@ import {
   transferWithLoop,
 } from "./loop-client";
 import { isDemoMode } from "../demo-mode";
-import { intentSignatureMode, isLoopWalletEnabled, loopNetworkFromEnv } from "./config";
+import { isLoopWalletEnabled, loopNetworkFromEnv, usesSessionIntentSignature } from "./config";
 import { signIntentPayload } from "./sign-intent";
 import type {
   ConnectedWallet,
@@ -197,8 +197,9 @@ export function WalletProvider({
 
   const signIntent = useCallback(
     async (payload: CanonicalIntentPayload) => {
-      // Dev intent signatures do not need Loop connected (validator-hosted app party).
-      if (intentSignatureMode() !== "dev" && kind === "loop" && !providerRef.current) {
+      // Session/dev integrity hashes do not need Loop connected (Temple custody:
+      // trade from the validator-hosted app party; Loop is deposit/withdraw only).
+      if (!usesSessionIntentSignature() && kind === "loop" && !providerRef.current) {
         throw new Error("Connect your Loop wallet before submitting an intent.");
       }
       return signIntentPayload(wallet, providerRef.current, payload);

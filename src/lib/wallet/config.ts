@@ -14,15 +14,24 @@ export function loopNetworkFromEnv(): LoopNetwork {
 }
 
 /**
- * How intents are signed. The `loop` verifier resolves the *maker* party's
- * on-ledger public key, but the maker is a validator-hosted (local) trading
- * party whose key the participant holds — a Loop-wallet signature can't be
- * verified against it. Until external-party intent signing is wired, set
- * `NEXT_PUBLIC_INTENT_SIGNATURE_MODE=dev` to emit `dev:` signatures (accepted
- * by the backend's hybrid verifier when NODE_ENV≠production). Loop is still
- * used for wallet connect, deposits, and transfers.
+ * How intents are signed for Temple-style custody trading.
+ *
+ * - `session` (recommended, TestNet + MainNet): emit a payload integrity hash
+ *   (`dev:<sha256>`). Authorization is the login session + maker === app party
+ *   on the API. Loop is used only for deposit/withdraw transfers — not per trade
+ *   (Loop signatures cost CC gas).
+ * - `dev`: legacy alias of `session`.
+ * - `loop`: ask the Loop wallet to Ed25519-sign each intent (expensive; only if
+ *   the maker party key is held in Loop).
  */
-export function intentSignatureMode(): "dev" | "loop" {
-  const raw = (process.env.NEXT_PUBLIC_INTENT_SIGNATURE_MODE ?? "").trim().toLowerCase();
-  return raw === "dev" ? "dev" : "loop";
+export function intentSignatureMode(): "session" | "dev" | "loop" {
+  const raw = (process.env.NEXT_PUBLIC_INTENT_SIGNATURE_MODE ?? "session").trim().toLowerCase();
+  if (raw === "loop") return "loop";
+  if (raw === "dev") return "dev";
+  return "session";
+}
+
+/** True when intents use session/dev integrity hashes (no Loop signing). */
+export function usesSessionIntentSignature(): boolean {
+  return intentSignatureMode() !== "loop";
 }
