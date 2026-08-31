@@ -250,12 +250,14 @@ export default function AccountPage() {
               </button>
             </div>
             <div className="account-identity">
-              {!isDemoMode() && <IdRow label="App party (trading)" value={appParty} mono />}
+              <IdRow label="App party (trading)" value={appParty} mono />
               <IdRow
                 label="Linked Loop party (withdraw destination)"
                 value={
                   isDemoMode()
-                    ? "Linked (hidden in demo)"
+                    ? profile?.loopPartyId || profile?.cantonPartyId
+                      ? "Linked (hidden in demo)"
+                      : "Not linked — connect to link it"
                     : (profile?.loopPartyId ?? profile?.cantonPartyId ?? "Not linked")
                 }
                 mono={!isDemoMode()}
