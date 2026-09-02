@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasTraversal, isBlockedProxyPath, resolveTrustedEdge } from "./proxy-guard";
+import { hasTraversal, isBlockedProxyPath, normalizeCountryCode, resolveTrustedEdge } from "./proxy-guard";
 
 describe("isBlockedProxyPath", () => {
   it("blocks operator/dev/auth backchannel paths", () => {
@@ -30,6 +30,15 @@ describe("resolveTrustedEdge", () => {
 
   it("defaults to none on a bare Node host", () => {
     expect(resolveTrustedEdge({})).toBe("none");
+  });
+});
+
+describe("normalizeCountryCode", () => {
+  it("accepts ISO alpha-2 and drops unknown sentinels", () => {
+    expect(normalizeCountryCode("ae")).toBe("AE");
+    expect(normalizeCountryCode("XX")).toBeUndefined();
+    expect(normalizeCountryCode("T1")).toBeUndefined();
+    expect(normalizeCountryCode("")).toBeUndefined();
   });
 });
 

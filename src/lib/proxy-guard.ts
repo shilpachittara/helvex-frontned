@@ -27,6 +27,16 @@ export function resolveTrustedEdge(
   return "none";
 }
 
+/** Header Edge middleware stamps after reading Vercel/Cloudflare geo. Overwritten, never trusted from the browser. */
+export const EDGE_COUNTRY_HEADER = "x-helvex-edge-country";
+export const EDGE_IP_HEADER = "x-helvex-edge-ip";
+
+export function normalizeCountryCode(raw: string | null | undefined): string | undefined {
+  const cc = raw?.trim().toUpperCase();
+  if (!cc || cc === "XX" || cc === "T1") return undefined;
+  return cc;
+}
+
 export function isBlockedProxyPath(path: string): boolean {
   return (
     BLOCKED_PROXY_PATHS.has(path) ||

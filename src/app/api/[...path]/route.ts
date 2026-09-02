@@ -1,7 +1,14 @@
 import { createHmac } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "../../../auth";
-import { hasTraversal, isBlockedProxyPath, resolveTrustedEdge } from "../../../lib/proxy-guard";
+import {
+  EDGE_COUNTRY_HEADER,
+  EDGE_IP_HEADER,
+  hasTraversal,
+  isBlockedProxyPath,
+  normalizeCountryCode,
+  resolveTrustedEdge,
+} from "../../../lib/proxy-guard";
 
 // Identity injection happens server-side; force the Node runtime for crypto.
 export const runtime = "nodejs";
@@ -62,11 +69,16 @@ function resolveTrustedContext(request: NextRequest): { ip?: string; country?: s
   const h = (name: string) => request.headers.get(name)?.trim() || undefined;
   switch (edge) {
     case "cloudflare":
-      return { ip: h("cf-connecting-ip"), country: h("cf-ipcountry")?.toUpperCase() };
+      return {
+        ip: h(EDGE_IP_HEADER) ?? h("cf-connecting-ip"),
+        country: normalizeCountryCode(h(EDGE_COUNTRY_HEADER) ?? h("cf-ipcountry")),
+      };
     case "vercel":
       return {
-        ip: h("x-real-ip") ?? h("x-vercel-forwarded-for")?.split(",")[0]?.trim(),
-        country: h("x-vercel-ip-country")?.toUpperCase(),
+        ip: h(EDGE_IP_HEADER) ?? h("x-real-ip") ?? h("x-vercel-forwarded-for")?.split(",")[0]?.trim(),
+        country: normalizeCountryCode(
+          h(EDGE_COUNTRY_HEADER) ?? h("x-vercel-ip-country"),
+        ),
       };
     case "xff":
       return { ip: h("x-forwarded-for")?.split(",")[0]?.trim(), country: undefined };
@@ -139,6 +151,14 @@ async function proxyRequest(request: NextRequest, path: string): Promise<NextRes
   // Use `||` (not `??`) so a blank env value falls back instead of being treated
   // as a configured empty secret — must match the backend's resolution in auth.ts.
   const proxySecret = process.env.INTERNAL_PROXY_SECRET || process.env.SESSION_SECRET;
+  const trusted = resolveTrustedContext(request);
+  // Also send the country as the header `geoContextFromHeaders` already reads.
+  // Needed when the API is NODE_ENV≠production (GEO_TRUST_MODE defaults to
+  // `off`) and therefore ignores the signed x-proxy-context. Only values the
+  // Edge just stamped — never a browser-supplied country.
+  if (trusted.country) headers.set("x-vercel-ip-country", trusted.country);
+  if (trusted.ip) headers.set("x-forwarded-for", trusted.ip);
+
   if (proxySecret) {
     const session = await auth();
     if (session?.user?.id) {
@@ -146,7 +166,7 @@ async function proxyRequest(request: NextRequest, path: string): Promise<NextRes
     }
     // Always vouch for the network context (even pre-auth) so the backend's geo
     // gate has a trustworthy, non-spoofable region/IP for EVERY request.
-    headers.set("x-proxy-context", signProxyContext(resolveTrustedContext(request), proxySecret));
+    headers.set("x-proxy-context", signProxyContext(trusted, proxySecret));
   }
 
   // Solver + maker routes authenticate via the user's session (which carries the
