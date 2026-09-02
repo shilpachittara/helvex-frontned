@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasTraversal, isBlockedProxyPath } from "./proxy-guard";
+import { hasTraversal, isBlockedProxyPath, resolveTrustedEdge } from "./proxy-guard";
 
 describe("isBlockedProxyPath", () => {
   it("blocks operator/dev/auth backchannel paths", () => {
@@ -15,6 +15,21 @@ describe("isBlockedProxyPath", () => {
     expect(isBlockedProxyPath("/v1/quote")).toBe(false);
     expect(isBlockedProxyPath("/v1/solver/fill")).toBe(false);
     expect(isBlockedProxyPath("/v1/balances")).toBe(false);
+  });
+});
+
+describe("resolveTrustedEdge", () => {
+  it("uses an explicit PROXY_TRUSTED_EDGE", () => {
+    expect(resolveTrustedEdge({ PROXY_TRUSTED_EDGE: "cloudflare" })).toBe("cloudflare");
+    expect(resolveTrustedEdge({ PROXY_TRUSTED_EDGE: "none", VERCEL: "1" })).toBe("none");
+  });
+
+  it("defaults to vercel when running on Vercel", () => {
+    expect(resolveTrustedEdge({ VERCEL: "1" })).toBe("vercel");
+  });
+
+  it("defaults to none on a bare Node host", () => {
+    expect(resolveTrustedEdge({})).toBe("none");
   });
 });
 

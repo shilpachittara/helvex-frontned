@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "../../../auth";
-import { hasTraversal, isBlockedProxyPath } from "../../../lib/proxy-guard";
+import { hasTraversal, isBlockedProxyPath, resolveTrustedEdge } from "../../../lib/proxy-guard";
 
 // Identity injection happens server-side; force the Node runtime for crypto.
 export const runtime = "nodejs";
@@ -48,17 +48,17 @@ function signProxyContext(
  * declared via `PROXY_TRUSTED_EDGE`. A browser-supplied `cf-ipcountry` /
  * `x-forwarded-for` is NEVER trusted here — that was the geo-bypass hole.
  *
- *   - `none` (default): no trusted edge (e.g. a bare `next start`). No country is
- *     asserted, so the backend geo gate fails CLOSED. Deploy behind a real edge
- *     (below) or a server-side GeoIP resolver before enabling geo enforcement.
+ *   - `none` (default off Vercel): no trusted edge (e.g. a bare `next start`).
+ *     No country is asserted, so the backend geo gate fails CLOSED.
  *   - `cloudflare`: trust `cf-ipcountry` / `cf-connecting-ip` — valid ONLY when
  *     Cloudflare sits in front and the origin is not reachable directly.
- *   - `vercel`: trust `x-vercel-ip-country` / `x-real-ip`.
+ *   - `vercel`: trust `x-vercel-ip-country` / `x-real-ip`. Auto-selected when
+ *     `VERCEL=1`. Set `PROXY_TRUSTED_EDGE=vercel` explicitly on MainNet.
  *   - `xff`: trust the leftmost `x-forwarded-for` entry as the IP (no country);
  *     use only behind a trusted LB that overwrites XFF.
  */
 function resolveTrustedContext(request: NextRequest): { ip?: string; country?: string } {
-  const edge = (process.env.PROXY_TRUSTED_EDGE ?? "none").toLowerCase();
+  const edge = resolveTrustedEdge();
   const h = (name: string) => request.headers.get(name)?.trim() || undefined;
   switch (edge) {
     case "cloudflare":

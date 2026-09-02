@@ -10,6 +10,23 @@
  */
 export const BLOCKED_PROXY_PATHS = new Set(["/v1/auth/login", "/v1/auth/link-google"]);
 
+/**
+ * Which edge the Next proxy may read IP/country from for `x-proxy-context`.
+ * Explicit `PROXY_TRUSTED_EDGE` always wins. On Vercel (`VERCEL=1`) default to
+ * `vercel` so MainNet does not fail-closed with a null country. Bare `next start`
+ * stays `none` (no country asserted → backend geo gate fails closed).
+ */
+export function resolveTrustedEdge(
+  env: NodeJS.ProcessEnv = process.env,
+): "none" | "cloudflare" | "vercel" | "xff" {
+  const explicit = (env.PROXY_TRUSTED_EDGE ?? "").trim().toLowerCase();
+  if (explicit === "cloudflare" || explicit === "vercel" || explicit === "xff" || explicit === "none") {
+    return explicit;
+  }
+  if (env.VERCEL) return "vercel";
+  return "none";
+}
+
 export function isBlockedProxyPath(path: string): boolean {
   return (
     BLOCKED_PROXY_PATHS.has(path) ||
