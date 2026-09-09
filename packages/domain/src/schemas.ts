@@ -95,13 +95,22 @@ export const requestWithdrawalSchema = z.object({
 });
 export type RequestWithdrawalDto = z.infer<typeof requestWithdrawalSchema>;
 
-export const requestTransferSchema = z.object({
-  recipientEmail: z.string().email(),
-  instrument: instrumentKey,
-  amount: positiveAmountString,
-  idempotencyKey: z.string().min(8).max(128),
-});
+export const requestTransferSchema = z
+  .object({
+    recipientEmail: z.string().email(),
+    instrument: instrumentKey,
+    amount: positiveAmountString,
+    idempotencyKey: z.string().min(8).max(128),
+    confirmPassword: z.string().min(1).max(128).optional(),
+  })
+  .strict();
 export type RequestTransferDto = z.infer<typeof requestTransferSchema>;
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: z.string().min(8).max(128),
+});
+export type ChangePasswordDto = z.infer<typeof changePasswordSchema>;
 
 export const createApiKeySchema = z.object({
   label: z.string().min(1).max(128).optional(),

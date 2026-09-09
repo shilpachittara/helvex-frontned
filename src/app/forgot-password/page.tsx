@@ -52,7 +52,7 @@ export default function ForgotPasswordPage() {
           </Link>
           <h1>Forgot password</h1>
           <p>
-            Enter the email on your KYC-approved account. We will send a 6-character code and a
+            Enter the email on your KYC-approved account. We will send a verification code and a
             link to create or reset your password.
           </p>
         </div>

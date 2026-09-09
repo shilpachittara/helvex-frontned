@@ -1695,6 +1695,76 @@ input::placeholder {
   gap: 0.5rem;
 }
 
+.admin-desk-nav {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.admin-desk-nav a {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.admin-desk-nav a.is-active {
+  color: var(--accent);
+}
+
+.admin-desk-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.rewards-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1.1rem 0;
+}
+
+.rewards-figure {
+  display: block;
+  font-size: 1.35rem;
+  margin: 0.25rem 0;
+}
+
+.rewards-bars {
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  align-items: end;
+  gap: 0.3rem;
+  min-height: 92px;
+  margin: 0.5rem 0 1rem;
+}
+
+.rewards-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.rewards-bar-fill {
+  width: 70%;
+  border-radius: 4px 4px 1px 1px;
+  background: var(--accent);
+}
+
+.rewards-bar span {
+  font-size: 0.65rem;
+  color: var(--text-subtle);
+}
+
+@media (max-width: 700px) {
+  .rewards-stat-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .setup-link-alert {
   word-break: break-all;
   font-size: 0.8125rem;
@@ -2105,6 +2175,84 @@ input::placeholder {
   margin-top: 0.25rem;
 }
 
+.funding-source {
+  margin-bottom: 1.25rem;
+}
+
+.funding-source-label {
+  margin: 0 0 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 620;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.funding-source-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.funding-source-option {
+  text-align: left;
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.funding-source-option:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.funding-source-option.active {
+  color: var(--text);
+  background: rgba(99, 102, 241, 0.14);
+  border-color: rgba(99, 102, 241, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.2);
+}
+
+.funding-source-title {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 650;
+  margin-bottom: 0.25rem;
+}
+
+.funding-source-desc {
+  display: block;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-subtle);
+}
+
+.funding-source-option.active .funding-source-desc {
+  color: var(--text-muted);
+}
+
+.funding-source-loop {
+  margin-top: 0.75rem;
+}
+
+.funding-source-steps {
+  margin: 0 0 0.4rem;
+  padding-left: 1.15rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+@media (max-width: 640px) {
+  .funding-source-toggle {
+    grid-template-columns: 1fr;
+  }
+}
+
 .intent-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -2139,6 +2287,60 @@ input::placeholder {
   background: rgba(99, 102, 241, 0.18);
   color: var(--text);
   box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.35);
+}
+
+.intent-role-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: -0.5rem 0 1.1rem;
+}
+
+.intent-role-filter {
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 560;
+  cursor: pointer;
+}
+
+.intent-role-filter:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.intent-role-filter.active {
+  color: var(--text);
+  background: rgba(99, 102, 241, 0.16);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.intent-card-badges {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+
+.intent-role-badge {
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+}
+
+.intent-role-badge-created {
+  color: #c4b5fd;
+  background: rgba(99, 102, 241, 0.16);
+}
+
+.intent-role-badge-filled {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.14);
 }
 
 .intent-list-grid {

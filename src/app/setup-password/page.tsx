@@ -18,7 +18,7 @@ function SetupPasswordForm() {
   const [done, setDone] = useState(false);
   const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Email deep-link already carries the code — keep the field but make it quieter.
-  const codeFromEmailLink = /^[A-Z0-9]{6}$/.test(tokenFromLink);
+  const codeFromEmailLink = /^[A-Z0-9]{6,12}$/.test(tokenFromLink);
 
   useEffect(() => {
     return () => {
@@ -69,7 +69,7 @@ function SetupPasswordForm() {
           <p>
             {codeFromEmailLink
               ? "Your verification code is filled in from the email link. Set a password to activate your account."
-              : "Enter the 6-character code from your approval email, then choose a password. Lost the email? Use Forgot password."}
+              : "Enter the code from your approval email, then choose a password. Lost the email? Use Forgot password."}
           </p>
         </div>
 
@@ -96,7 +96,7 @@ function SetupPasswordForm() {
               autoComplete="one-time-code"
               maxLength={6}
               pattern="[A-Za-z0-9]{6}"
-              placeholder="6-character code"
+              placeholder="Email verification code"
               style={{ letterSpacing: "0.2em", textTransform: "uppercase" }}
             />
           </div>

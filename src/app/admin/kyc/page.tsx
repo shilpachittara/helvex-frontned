@@ -105,9 +105,11 @@ export default function AdminKycPage() {
         role: request.requestedRole as "MAKER" | "SOLVER" | "BOTH",
       });
       setLastSetup(
-        cantonPartyId
-          ? `Approved ${result.email}. Setup link: ${window.location.origin}${result.setupUrl}`
-          : `Approved ${result.email} (no Loop party yet — they Connect Loop after login). Setup: ${window.location.origin}${result.setupUrl}`,
+        result.passwordUnchanged || !result.setupUrl
+          ? `Approved ${result.email}. Existing password was left unchanged.`
+          : cantonPartyId
+            ? `Approved ${result.email}. Setup link: ${window.location.origin}${result.setupUrl}`
+            : `Approved ${result.email} (no Loop party yet — they Connect Loop after login). Setup: ${window.location.origin}${result.setupUrl}`,
       );
       await refresh();
     } catch (err) {
@@ -180,10 +182,13 @@ export default function AdminKycPage() {
       <div className="login-card login-card-wide">
         <div className="panel-header">
           <div>
-            <Link href="/login" className="auth-back-link">
-              ← Sign in
-            </Link>
-            <h1 className="panel-title">KYC review desk</h1>
+            <div className="admin-desk-nav">
+                <Link href="/admin/kyc" className="is-active">
+                  KYC
+                </Link>
+                <Link href="/admin/rewards">Rewards</Link>
+              </div>
+              <h1 className="panel-title">KYC review desk</h1>
             <p className="panel-subtitle">
               Operator-only · set ADMIN_API_KEY + ADMIN_UI_ENABLED=true on the web server
             </p>
