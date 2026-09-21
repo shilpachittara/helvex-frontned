@@ -196,8 +196,8 @@ export async function onboardAccount(
   });
 }
 
-export async function fetchBalances(appParty: string): Promise<{ balances: BalanceView[] }> {
-  return api("/v1/balances", { headers: partyHeaders(appParty) });
+export async function fetchBalances(appParty?: string | null): Promise<{ balances: BalanceView[] }> {
+  return api("/v1/balances", { headers: appParty ? partyHeaders(appParty) : undefined });
 }
 
 export interface LoopInstrumentSpec {

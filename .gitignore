@@ -11,4 +11,3 @@ skills-lock.json
 # env backups (timestamped copies of .env)
 .env.bak.*
 .env.testnet
-.env.production

@@ -75,7 +75,7 @@ export default function SolverPage() {
     loading: balancesLoading,
     error: balancesError,
     refresh: refreshBalances,
-  } = useTradingBalances(solver);
+  } = useTradingBalances(Boolean(session?.user.email) || solver);
 
   useEffect(() => {
     const email = session?.user.email;
@@ -202,14 +202,6 @@ export default function SolverPage() {
           <div className="stat-value">{openQueue.length}</div>
           <div className="stat-label">Open to fill</div>
         </div>
-        {!isDemoMode() && (
-          <div className="stat-card stat-card-premium">
-            <div className="stat-value stat-value-mono">
-              {solver ? `${solver.slice(0, 14)}…` : "—"}
-            </div>
-            <div className="stat-label">Your trading party</div>
-          </div>
-        )}
         <div className="stat-card stat-card-premium">
           <div className="stat-value">{fills.filter((i) => i.status === "SETTLED").length}</div>
           <div className="stat-label">Your settled fills</div>

@@ -146,7 +146,7 @@ export default function HomePage() {
     loading: balancesLoading,
     error: balancesError,
     refresh: refreshBalances,
-  } = useTradingBalances(appParty);
+  } = useTradingBalances(Boolean(session?.user.email) || appParty);
 
   // Maker is the user's app (trading) party hosted on our validator, resolved
   // from the verified profile. Falls back to the linked Loop / session party.

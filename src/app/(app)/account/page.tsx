@@ -31,7 +31,7 @@ import {
 } from "../../../lib/api";
 import { isValidAmount, normalizeAmount } from "../../../lib/amount";
 import { isDemoMode } from "../../../lib/demo-mode";
-import { formatAmount } from "../../../lib/format-amount";
+import { formatAmount, formatBalanceAmount } from "../../../lib/format-amount";
 import { formatUtcDate, formatUtcDateTime } from "../../../lib/format-time";
 import { useWallet } from "../../../lib/wallet/WalletProvider";
 
@@ -476,6 +476,24 @@ function WalletCard({
 }
 
 function BalancesPanel({ balances }: { balances: BalanceView[] }) {
+  const rows = (["CC", "CBTC", "USDCx"] as const).map((symbol) => {
+    const match = balances.find(
+      (b) =>
+        b.symbol === symbol ||
+        b.instrument === symbol ||
+        (symbol === "CC" && (b.instrument === "Amulet" || b.symbol === "Amulet")),
+    );
+    return (
+      match ?? {
+        instrument: symbol,
+        symbol,
+        total: "0",
+        locked: "0",
+        available: "0",
+      }
+    );
+  });
+
   return (
     <section className="panel panel-glass account-section">
       <div className="panel-header">
@@ -484,25 +502,17 @@ function BalancesPanel({ balances }: { balances: BalanceView[] }) {
           <p className="panel-subtitle">On-ledger holdings on your app party</p>
         </div>
       </div>
-      {balances.length === 0 ? (
-        <div className="empty-state empty-state-premium">
-          <div className="empty-state-icon">◎</div>
-          <p>No balances yet</p>
-          <span className="empty-state-sub">Deposit from Loop to start trading</span>
-        </div>
-      ) : (
-        <div className="balance-grid">
-          {balances.map((b) => (
-            <div key={b.instrument} className="balance-card">
-              <span className="balance-symbol">{b.symbol}</span>
-              <span className="balance-available">{formatAmount(b.available)}</span>
-              <span className="balance-sub">
-                {formatAmount(b.total)} total · {formatAmount(b.locked)} locked
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="balance-grid">
+        {rows.map((b) => (
+          <div key={b.symbol} className="balance-card">
+            <span className="balance-symbol">{b.symbol}</span>
+            <span className="balance-available">{formatBalanceAmount(b.available, b.symbol)}</span>
+            <span className="balance-sub">
+              {formatBalanceAmount(b.total, b.symbol)} total · {formatBalanceAmount(b.locked, b.symbol)} locked
+            </span>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

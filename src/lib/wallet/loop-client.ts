@@ -18,23 +18,35 @@ export function clearLoopConnectSession(): void {
   }
 }
 
-export function initLoopWallet(options: {
+/** True when localStorage has a Loop session the SDK can actually resume. */
+function hasPersistedLoopSession(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = localStorage.getItem(LOOP_CONNECT_STORAGE_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return Boolean(
+      parsed.ticketId &&
+        parsed.sessionId &&
+        parsed.authToken &&
+        parsed.partyId &&
+        parsed.publicKey,
+    );
+  } catch {
+    clearLoopConnectSession();
+    return false;
+  }
+}
+
+type LoopInitOptions = {
   network: LoopNetwork;
   onAccept: (provider: LoopProvider) => void;
   onReject: () => void;
-}): void {
-  // Re-init when network changes (e.g. local → testnet) so we don't reuse the
-  // wrong wallet host / cached ticket.
-  if (initialized && initializedNetwork === options.network) return;
-  if (initialized && initializedNetwork !== options.network) {
-    try {
-      loop.logout();
-    } catch {
-      /* ignore */
-    }
-    clearLoopConnectSession();
-  }
+};
 
+let lastInit: LoopInitOptions | null = null;
+
+function applyLoopInit(options: LoopInitOptions): void {
   loop.init({
     appName: process.env.NEXT_PUBLIC_APP_NAME || "Helvex",
     network: options.network,
@@ -48,28 +60,75 @@ export function initLoopWallet(options: {
   });
   initialized = true;
   initializedNetwork = options.network;
+  lastInit = options;
 }
 
-export async function autoConnectLoopWallet(): Promise<void> {
-  try {
-    await loop.autoConnect();
-  } catch {
-    // Stale/expired ticket from a previous session — clear and let the user
-    // click Connect for a fresh handshake (SDK 0.13+ also clears, belt+suspenders).
-    clearLoopConnectSession();
+export function initLoopWallet(options: LoopInitOptions): void {
+  if (typeof window === "undefined") return;
+  lastInit = options;
+  // Re-init when network changes (e.g. local → testnet) so we don't reuse the
+  // wrong wallet host / cached ticket.
+  if (initialized && initializedNetwork !== options.network) {
     try {
       loop.logout();
     } catch {
       /* ignore */
     }
+    clearLoopConnectSession();
   }
+
+  // Do not call init() again on the same network: it replaces the Connection
+  // and any in-flight ticket, so the Loop popup opens without ticketId
+  // ("Invalid Connection Request / No ticket ID provided").
+  if (initialized && initializedNetwork === options.network) return;
+  applyLoopInit(options);
+}
+
+let autoConnectInFlight: Promise<void> | null = null;
+
+export async function autoConnectLoopWallet(): Promise<void> {
+  if (typeof window === "undefined") return;
+  if (typeof loop.autoConnect !== "function") return;
+  // No saved handshake — skip. The SDK still constructs a blank session and
+  // can throw "No valid session found" / fail verifySession (Next overlay).
+  if (!hasPersistedLoopSession()) return;
+  if (autoConnectInFlight) return autoConnectInFlight;
+
+  autoConnectInFlight = (async () => {
+    try {
+      await loop.autoConnect();
+    } catch {
+      // Stale/expired ticket or Loop API unreachable — clear and let the user
+      // click Connect for a fresh handshake.
+      clearLoopConnectSession();
+      try {
+        loop.logout();
+      } catch {
+        /* ignore */
+      }
+    } finally {
+      autoConnectInFlight = null;
+    }
+  })();
+  return autoConnectInFlight;
 }
 
 export async function connectLoopWallet(): Promise<void> {
+  if (autoConnectInFlight) {
+    await autoConnectInFlight.catch(() => undefined);
+  }
+  if (!initialized && lastInit) applyLoopInit(lastInit);
+
   try {
     await loop.connect();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (/not initialized/i.test(msg) && lastInit) {
+      initialized = false;
+      applyLoopInit(lastInit);
+      await loop.connect();
+      return;
+    }
     // Ticket expired / invalid connection details — wipe cache and retry once.
     if (/ticket|expired|invalid|connection details/i.test(msg)) {
       clearLoopConnectSession();

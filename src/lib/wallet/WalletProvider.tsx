@@ -14,7 +14,6 @@ import type { CanonicalIntentPayload } from "@intent-swap/domain";
 import { linkLoopWallet, fetchWalletProfile } from "../api";
 import {
   autoConnectLoopWallet,
-  clearLoopConnectSession,
   connectLoopWallet,
   disconnectLoopWallet,
   emailFromProvider,
@@ -129,17 +128,28 @@ export function WalletProvider({
     setError("Loop connection was rejected.");
   }, []);
 
+  const handleAcceptRef = useRef(handleAccept);
+  handleAcceptRef.current = handleAccept;
+  const handleRejectRef = useRef(handleReject);
+  handleRejectRef.current = handleReject;
+
   useEffect(() => {
     if (kind !== "loop") return;
     initLoopWallet({
       network: loopNetworkFromEnv(),
-      onAccept: handleAccept,
-      onReject: handleReject,
+      onAccept: (provider) => handleAcceptRef.current(provider),
+      onReject: () => handleRejectRef.current(),
     });
-    void autoConnectLoopWallet().catch(() => {
-      /* no saved Loop session */
-    });
-  }, [kind, handleAccept, handleReject]);
+    void autoConnectLoopWallet();
+  }, [kind]);
+
+  // autoConnect can succeed before NextAuth has the email; link once both exist.
+  useEffect(() => {
+    const provider = providerRef.current;
+    if (!accountEmail || kind !== "loop" || status !== "connected" || !provider) return;
+    if (linkState !== "unlinked") return;
+    void linkAccountWallet(provider);
+  }, [accountEmail, kind, status, linkState, linkAccountWallet]);
 
   useEffect(() => {
     if (!accountEmail || kind !== "loop" || status === "connected") return;
@@ -162,9 +172,9 @@ export function WalletProvider({
     setError(null);
     setLinkMessage(null);
     setStatus("connecting");
-    // Drop a stale Connect ticket before opening the popup — leftover
-    // sessionStorage entries are the #1 cause of "not connecting" in demos.
-    clearLoopConnectSession();
+    // Do not wipe loop_connect here. Clearing storage while the SDK still
+    // holds an in-memory session made connect() open Loop without ticketId
+    // ("No ticket ID provided in the connection request").
     providerRef.current = null;
     try {
       await connectLoopWallet();

@@ -1965,13 +1965,13 @@ input::placeholder {
 }
 
 .balance-strip-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.65rem;
 }
 
 .balance-strip-chip {
-  min-width: 7.5rem;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
@@ -1998,6 +1998,9 @@ input::placeholder {
   font-size: 1.05rem;
   font-weight: 700;
   color: var(--text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.25;
 }
 
 .balance-strip-meta {
@@ -2007,7 +2010,7 @@ input::placeholder {
 
 .balance-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
 }
 
@@ -2015,10 +2018,12 @@ input::placeholder {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  min-width: 0;
   padding: 1rem 1.25rem;
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
+  overflow: hidden;
 }
 
 .balance-symbol {
@@ -2029,15 +2034,27 @@ input::placeholder {
 }
 
 .balance-available {
-  font-size: 1.6rem;
+  font-size: clamp(1rem, 2.2vw, 1.35rem);
   font-weight: 700;
   color: var(--text);
   font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.25;
 }
 
 .balance-sub {
   font-size: 0.74rem;
   color: var(--text-subtle);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (max-width: 720px) {
+  .balance-grid,
+  .balance-strip-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .scope-row {
