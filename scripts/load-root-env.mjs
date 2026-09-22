@@ -91,9 +91,45 @@ export function applyDerivedEnv(env) {
   return env;
 }
 
-/** Root `.env` with derived defaults applied. */
+/**
+ * Public/derived keys that Vercel (or `next start`) may already have in
+ * `process.env`. `next.config` `env` overwrites client inlines, so if we only
+ * read `frontend/.env` (gitignored, absent on Vercel) we stamp `dev`/`devnet`
+ * over the MainNet values the operator already set.
+ */
+function envFromProcess(env = process.env) {
+  const keys = [
+    "API_URL",
+    "API_PORT",
+    "WEB_URL",
+    "WEB_PORT",
+    "CANTON_NETWORK",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "INTENT_SIGNATURE_MODE",
+    "NEXT_PUBLIC_API_URL",
+    "NEXT_PUBLIC_API_PORT",
+    "NEXT_PUBLIC_APP_NAME",
+    "NEXT_PUBLIC_CANTON_NETWORK",
+    "NEXT_PUBLIC_GOOGLE_AUTH_ENABLED",
+    "NEXT_PUBLIC_INTENT_SIGNATURE_MODE",
+    "NEXT_PUBLIC_LOOP_NETWORK",
+    "NEXT_PUBLIC_WALLET_PROVIDER",
+  ];
+  const out = {};
+  for (const key of keys) {
+    const val = env[key];
+    if (val != null && String(val).trim() !== "") out[key] = val;
+  }
+  return out;
+}
+
+/** Root `.env` with host/process env winning, then derived defaults. */
 export function getResolvedEnv() {
-  return applyDerivedEnv({ ...readRootEnvFile() });
+  return applyDerivedEnv({
+    ...readRootEnvFile(),
+    ...envFromProcess(),
+  });
 }
 
 const FRONTEND_MIN_SECRET_LEN = 24;
