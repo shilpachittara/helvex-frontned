@@ -18,6 +18,7 @@ import {
   requestWithdrawal,
   revokeApiKey,
   sendTransfer,
+  changePassword,
   type ApiKeyScope,
   type ApiKeyView,
   type BalanceView,
@@ -30,7 +31,7 @@ import {
 } from "../../../lib/api";
 import { isValidAmount, normalizeAmount } from "../../../lib/amount";
 import { isDemoMode } from "../../../lib/demo-mode";
-import { formatAmount } from "../../../lib/format-amount";
+import { formatAmount, formatBalanceAmount } from "../../../lib/format-amount";
 import { formatUtcDate, formatUtcDateTime } from "../../../lib/format-time";
 import { useWallet } from "../../../lib/wallet/WalletProvider";
 
@@ -318,6 +319,12 @@ export default function AccountPage() {
             }}
           />
 
+          <ChangePasswordPanel
+            onDone={(n) => {
+              setNotice(n);
+            }}
+          />
+
           <DepositsHistory deposits={deposits} />
 
           <WithdrawalsHistory withdrawals={withdrawals} />
@@ -469,6 +476,24 @@ function WalletCard({
 }
 
 function BalancesPanel({ balances }: { balances: BalanceView[] }) {
+  const rows = (["CC", "CBTC", "USDCx"] as const).map((symbol) => {
+    const match = balances.find(
+      (b) =>
+        b.symbol === symbol ||
+        b.instrument === symbol ||
+        (symbol === "CC" && (b.instrument === "Amulet" || b.symbol === "Amulet")),
+    );
+    return (
+      match ?? {
+        instrument: symbol,
+        symbol,
+        total: "0",
+        locked: "0",
+        available: "0",
+      }
+    );
+  });
+
   return (
     <section className="panel panel-glass account-section">
       <div className="panel-header">
@@ -477,25 +502,17 @@ function BalancesPanel({ balances }: { balances: BalanceView[] }) {
           <p className="panel-subtitle">On-ledger holdings on your app party</p>
         </div>
       </div>
-      {balances.length === 0 ? (
-        <div className="empty-state empty-state-premium">
-          <div className="empty-state-icon">◎</div>
-          <p>No balances yet</p>
-          <span className="empty-state-sub">Deposit from Loop to start trading</span>
-        </div>
-      ) : (
-        <div className="balance-grid">
-          {balances.map((b) => (
-            <div key={b.instrument} className="balance-card">
-              <span className="balance-symbol">{b.symbol}</span>
-              <span className="balance-available">{formatAmount(b.available)}</span>
-              <span className="balance-sub">
-                {formatAmount(b.total)} total · {formatAmount(b.locked)} locked
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="balance-grid">
+        {rows.map((b) => (
+          <div key={b.symbol} className="balance-card">
+            <span className="balance-symbol">{b.symbol}</span>
+            <span className="balance-available">{formatBalanceAmount(b.available, b.symbol)}</span>
+            <span className="balance-sub">
+              {formatBalanceAmount(b.total, b.symbol)} total · {formatBalanceAmount(b.locked, b.symbol)} locked
+            </span>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
@@ -884,6 +901,7 @@ function SendPanel({
   const [recipientEmail, setRecipientEmail] = useState("");
   const [instrument, setInstrument] = useState<Instrument>("CC");
   const [amount, setAmount] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function submit() {
@@ -895,6 +913,10 @@ function SendPanel({
       onDone({ type: "error", text: "Enter a valid amount greater than zero." });
       return;
     }
+    if (!confirmPassword) {
+      onDone({ type: "error", text: "Enter your password to authorize this transfer." });
+      return;
+    }
     setBusy(true);
     try {
       await sendTransfer(appParty, {
@@ -902,10 +924,12 @@ function SendPanel({
         instrument,
         amount: normalizeAmount(amount),
         idempotencyKey: newIdempotencyKey(),
+        confirmPassword,
       });
       onDone({ type: "success", text: `Sent ${amount} ${instrument} to ${recipientEmail}.` });
       setAmount("");
       setRecipientEmail("");
+      setConfirmPassword("");
     } catch (err) {
       onDone({ type: "error", text: err instanceof Error ? err.message : "Transfer failed" });
     } finally {
@@ -918,7 +942,9 @@ function SendPanel({
       <div className="panel-header">
         <div>
           <h2 className="panel-title">Send to a user</h2>
-          <p className="panel-subtitle">Instant, fee-free transfer to another Helvex account</p>
+          <p className="panel-subtitle">
+            Instant transfer to another Helvex account. You must confirm with your password.
+          </p>
         </div>
       </div>
       <div className="field">
@@ -958,18 +984,110 @@ function SendPanel({
           />
         </div>
       </div>
+      <div className="field">
+        <label htmlFor="xfer-password">Confirm with your password</label>
+        <input
+          id="xfer-password"
+          type="password"
+          autoComplete="current-password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          placeholder="Your Helvex password"
+        />
+      </div>
       <button
         type="button"
         className="btn btn-primary"
         onClick={submit}
-        disabled={busy || !isValidAmount(amount) || !recipientEmail}
+        disabled={busy || !isValidAmount(amount) || !recipientEmail || !confirmPassword}
       >
         {busy ? <span className="spinner" /> : "Send"}
       </button>
       <p className="field-hint">
-        Both accounts settle on our validator, so transfers are instant with no Loop withdrawal fee.
-        Daily limits apply based on your KYC tier.
+        Only you can send from this account. Helvex never accepts a sender party ID from the
+        browser. Daily limits apply based on your KYC tier.
       </p>
+    </section>
+  );
+}
+
+function ChangePasswordPanel({ onDone }: { onDone: (n: Notice) => void }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (newPassword.length < 8) {
+      onDone({ type: "error", text: "New password must be at least 8 characters." });
+      return;
+    }
+    if (newPassword !== confirm) {
+      onDone({ type: "error", text: "New passwords do not match." });
+      return;
+    }
+    setBusy(true);
+    try {
+      await changePassword({ currentPassword, newPassword });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirm("");
+      onDone({ type: "success", text: "Password updated. Only you can change it." });
+    } catch (err) {
+      onDone({ type: "error", text: err instanceof Error ? err.message : "Password change failed" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel panel-glass account-section">
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">Change password</h2>
+          <p className="panel-subtitle">Requires your current password. Operators cannot reset it.</p>
+        </div>
+      </div>
+      <div className="field">
+        <label htmlFor="pw-current">Current password</label>
+        <input
+          id="pw-current"
+          type="password"
+          autoComplete="current-password"
+          value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+        />
+      </div>
+      <div className="grid-2">
+        <div className="field">
+          <label htmlFor="pw-new">New password</label>
+          <input
+            id="pw-new"
+            type="password"
+            autoComplete="new-password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="pw-confirm">Confirm new</label>
+          <input
+            id="pw-confirm"
+            type="password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+          />
+        </div>
+      </div>
+      <button
+        type="button"
+        className="btn btn-primary"
+        onClick={() => void submit()}
+        disabled={busy || !currentPassword || !newPassword}
+      >
+        {busy ? <span className="spinner" /> : "Update password"}
+      </button>
     </section>
   );
 }

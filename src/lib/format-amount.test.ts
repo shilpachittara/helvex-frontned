@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatAmount } from "./format-amount";
+import { formatAmount, formatBalanceAmount } from "./format-amount";
 
 describe("formatAmount", () => {
   it("trims trailing zeros", () => {
@@ -33,5 +33,11 @@ describe("formatAmount", () => {
     expect(formatAmount(undefined)).toBe("—");
     expect(formatAmount(Number.NaN)).toBe("—");
     expect(formatAmount("NaN")).toBe("—");
+  });
+
+  it("caps trading-balance decimals so cards do not overflow", () => {
+    expect(formatBalanceAmount("300.8423193598", "CC")).toBe("300.8423");
+    expect(formatBalanceAmount("0.00061794266", "CBTC")).toBe("0.00061794");
+    expect(formatBalanceAmount("12.349", "USDCx")).toBe("12.35");
   });
 });

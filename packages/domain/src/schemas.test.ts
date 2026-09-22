@@ -22,6 +22,17 @@ test("prepareDepositSchema accepts a positive amount", () => {
   assert.equal(r.success, true);
 });
 
+test("transfer schema rejects spoofed sender/recipient party fields", () => {
+  const base = {
+    recipientEmail: "a@b.com",
+    instrument: "CC" as const,
+    amount: "1",
+    idempotencyKey: validKey,
+  };
+  assert.equal(requestTransferSchema.safeParse(base).success, true);
+  assert.equal(requestTransferSchema.safeParse({ ...base, from: "victim::1220" }).success, false);
+});
+
 test("withdrawal and transfer schemas also require a positive amount", () => {
   assert.equal(requestWithdrawalSchema.safeParse({ instrument: "CC", amount: "0", idempotencyKey: validKey }).success, false);
   assert.equal(

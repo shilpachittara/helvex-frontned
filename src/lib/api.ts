@@ -196,8 +196,8 @@ export async function onboardAccount(
   });
 }
 
-export async function fetchBalances(appParty: string): Promise<{ balances: BalanceView[] }> {
-  return api("/v1/balances", { headers: partyHeaders(appParty) });
+export async function fetchBalances(appParty?: string | null): Promise<{ balances: BalanceView[] }> {
+  return api("/v1/balances", { headers: appParty ? partyHeaders(appParty) : undefined });
 }
 
 export interface LoopInstrumentSpec {
@@ -280,7 +280,13 @@ export async function listWithdrawals(appParty: string): Promise<{ withdrawals: 
 
 export async function sendTransfer(
   appParty: string,
-  body: { recipientEmail: string; instrument: Instrument; amount: string; idempotencyKey: string },
+  body: {
+    recipientEmail: string;
+    instrument: Instrument;
+    amount: string;
+    idempotencyKey: string;
+    confirmPassword: string;
+  },
 ): Promise<{ transfer: TransferView }> {
   return api("/v1/transfers", {
     method: "POST",
@@ -437,6 +443,13 @@ export async function resetPassword(body: {
   return api("/v1/auth/reset-password", { method: "POST", body: JSON.stringify(body) });
 }
 
+export async function changePassword(body: {
+  currentPassword: string;
+  newPassword: string;
+}): Promise<{ ok: boolean }> {
+  return api("/v1/auth/change-password", { method: "POST", body: JSON.stringify(body) });
+}
+
 export async function fetchAdminKycRequests(
   adminKey: string,
   status?: "SUBMITTED" | "APPROVED" | "REJECTED",
@@ -449,7 +462,13 @@ export async function approveKycRequest(
   adminKey: string,
   id: string,
   body: { cantonPartyId?: string; role?: "MAKER" | "SOLVER" | "BOTH"; reviewNotes?: string },
-): Promise<{ ok: boolean; email: string; setupToken: string; setupUrl: string }> {
+): Promise<{
+    ok: boolean;
+    email: string;
+    setupToken: string | null;
+    setupUrl: string | null;
+    passwordUnchanged?: boolean;
+  }> {
   return apiAdmin(`/kyc/requests/${id}/approve`, adminKey, {
     method: "POST",
     body: JSON.stringify(body),
@@ -465,4 +484,36 @@ export async function rejectKycRequest(
     method: "POST",
     body: JSON.stringify({ reviewNotes }),
   });
+}
+
+export interface FeaturedAppRewardsSnapshot {
+  featured: boolean;
+  featuredSource: string;
+  providerPartyId: string;
+  appRewardsMode: "markers" | "traffic" | "off";
+  fetchedAt: string;
+  ccUsd: string | null;
+  ccUsdSource: string | null;
+  totalEarnedCc: string;
+  totalEarnedUsd: string | null;
+  todayMintedCc: string;
+  todayMintedUsd: string | null;
+  pendingCc: string;
+  pendingUsd: string | null;
+  mintedCc: string;
+  mintedUsd: string | null;
+  walletCc: string | null;
+  daily: Array<{ date: string; mintedCc: string; mintedUsd: string }>;
+  pendingCoupons: Array<{
+    contractId: string;
+    kind: "AppRewardCoupon" | "RewardCouponV2";
+    amountCc: string;
+    round: number | null;
+  }>;
+  sources: { featured: string; coupons: string; history: string };
+  notes: string[];
+}
+
+export function fetchAdminRewards(adminKey: string): Promise<FeaturedAppRewardsSnapshot> {
+  return apiAdmin("/rewards", adminKey);
 }

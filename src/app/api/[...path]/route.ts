@@ -55,12 +55,12 @@ function signProxyContext(
  * declared via `PROXY_TRUSTED_EDGE`. A browser-supplied `cf-ipcountry` /
  * `x-forwarded-for` is NEVER trusted here — that was the geo-bypass hole.
  *
- *   - `none` (default off Vercel): no trusted edge (e.g. a bare `next start`).
- *     No country is asserted, so the backend geo gate fails CLOSED.
+ *   - `none` (default): no trusted edge (e.g. a bare `next start`). No country is
+ *     asserted, so the backend geo gate fails CLOSED. Deploy behind a real edge
+ *     (below) or a server-side GeoIP resolver before enabling geo enforcement.
  *   - `cloudflare`: trust `cf-ipcountry` / `cf-connecting-ip` — valid ONLY when
  *     Cloudflare sits in front and the origin is not reachable directly.
- *   - `vercel`: trust `x-vercel-ip-country` / `x-real-ip`. Auto-selected when
- *     `VERCEL=1`. Set `PROXY_TRUSTED_EDGE=vercel` explicitly on MainNet.
+ *   - `vercel`: trust `x-vercel-ip-country` / `x-real-ip`.
  *   - `xff`: trust the leftmost `x-forwarded-for` entry as the IP (no country);
  *     use only behind a trusted LB that overwrites XFF.
  */

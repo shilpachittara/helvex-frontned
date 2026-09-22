@@ -17,7 +17,7 @@ function ResetPasswordForm() {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const codeFromEmailLink = /^[A-Z0-9]{6}$/.test(tokenFromLink);
+  const codeFromEmailLink = /^[A-Z0-9]{6,12}$/.test(tokenFromLink);
 
   useEffect(() => {
     return () => {
@@ -68,7 +68,7 @@ function ResetPasswordForm() {
           <p>
             {codeFromEmailLink
               ? "Your reset code is filled in from the email link. Choose a new password — the code expires in one hour."
-              : "Enter the 6-character code from your reset email, then choose a new password. Codes expire in one hour."}
+              : "Enter the code from your reset email, then choose a new password. Codes expire in one hour."}
           </p>
         </div>
 
@@ -95,7 +95,7 @@ function ResetPasswordForm() {
               autoComplete="one-time-code"
               maxLength={6}
               pattern="[A-Za-z0-9]{6}"
-              placeholder="6-character code"
+              placeholder="Email verification code"
               style={{ letterSpacing: "0.2em", textTransform: "uppercase" }}
             />
           </div>

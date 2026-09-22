@@ -18,6 +18,7 @@ import { useWallet } from "../../lib/wallet/WalletProvider";
 import type { PairId } from "../../lib/signing";
 import { PartyAccessBanner } from "../../components/AccessGate";
 import { DeadlineLabel } from "../../components/ClientTime";
+import { FundingSourcePicker, useFundingSource } from "../../components/FundingSource";
 import { LoopWalletBanner } from "../../components/WalletConnect";
 import { IntentProgress, StatusBadge } from "../../components/StatusBadge";
 import {
@@ -25,6 +26,8 @@ import {
   availableForSymbol,
   useTradingBalances,
 } from "../../components/TradingBalances";
+import { fundFromLoop, type FundFromLoopProgress } from "../../lib/fund-from-loop";
+import { isLoopWalletEnabled } from "../../lib/wallet/config";
 
 interface PairInfo {
   id: PairId;
@@ -41,8 +44,19 @@ interface IntentView {
   pair: PairId;
   sellAmount: string;
   minBuyAmount: string;
+  fillBuyAmount?: string | null;
+  winningSolver?: string | null;
   status: string;
   deadline: string;
+}
+
+function shortParty(party: string) {
+  return `${party.slice(0, 12)}…${party.slice(-4)}`;
+}
+
+function involvement(intent: IntentView, party: string | null): "created" | "filled" {
+  if (party && intent.winningSolver === party && intent.makerParty !== party) return "filled";
+  return "created";
 }
 
 const TOKEN_COLORS: Record<string, string> = {
@@ -97,7 +111,12 @@ function TokenChip({ symbol }: { symbol: string }) {
 
 export default function HomePage() {
   const { data: session } = useSession();
-  const { kind: walletKind, wallet, signIntent } = useWallet();
+  const { kind: walletKind, wallet, status: walletStatus, connect, transfer, signIntent } =
+    useWallet();
+  const [payFrom, setPayFrom] = useFundingSource();
+  const [fundProgress, setFundProgress] = useState<FundFromLoopProgress | "locking" | null>(
+    null,
+  );
   const [pairs, setPairs] = useState<PairInfo[]>([]);
   const [appParty, setAppParty] = useState<string | null>(null);
   const [accountNotice, setAccountNotice] = useState<string | null>(null);
@@ -118,6 +137,7 @@ export default function HomePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [intentTab, setIntentTab] = useState<"open" | "history">("open");
+  const [historyRole, setHistoryRole] = useState<"all" | "created" | "filled">("all");
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(
     null,
   );
@@ -126,7 +146,7 @@ export default function HomePage() {
     loading: balancesLoading,
     error: balancesError,
     refresh: refreshBalances,
-  } = useTradingBalances(appParty);
+  } = useTradingBalances(Boolean(session?.user.email) || appParty);
 
   // Maker is the user's app (trading) party hosted on our validator, resolved
   // from the verified profile. Falls back to the linked Loop / session party.
@@ -175,18 +195,15 @@ export default function HomePage() {
   }, [selectedPair, ttlSeconds]);
 
   const refreshIntents = useCallback(async () => {
-    // The backend lists intents for the authenticated app party; querying with
-    // the demo/placeholder maker returns nothing (or errors). Only fetch once
-    // the real trading party is resolved.
+    // Lists RFQs this trading party created or filled. Wait until the real
+    // app party is resolved — a placeholder maker returns nothing / 403.
     if (!appParty) {
       setIntents([]);
       return;
     }
     setRefreshing(true);
     try {
-      const res = await api<{ intents: IntentView[] }>(
-        `/v1/intents?maker=${encodeURIComponent(appParty)}`,
-      );
+      const res = await api<{ intents: IntentView[] }>("/v1/intents");
       setIntents(res.intents);
     } catch (err) {
       setMessage({
@@ -324,8 +341,24 @@ export default function HomePage() {
     }
     const maxTtl = selectedPair?.maxTtlSeconds ?? 86400;
     const effectiveTtl = Math.min(Math.max(60, ttlSeconds), maxTtl);
+    const useLoop = isLoopWalletEnabled() && payFrom === "loop";
+    if (useLoop && walletStatus !== "connected") {
+      setMessage({ type: "error", text: "Connect Loop before paying from your wallet." });
+      return;
+    }
     setLoading(true);
     try {
+      if (useLoop) {
+        await fundFromLoop({
+          appParty,
+          symbol: selectedPair?.sell ?? pair.split("_")[0] ?? "CC",
+          amount: normalizeAmount(sellAmount),
+          transfer,
+          onProgress: setFundProgress,
+        });
+        await refreshBalances();
+      }
+      setFundProgress("locking");
       const intentId = crypto.randomUUID();
       const deadline = new Date(Date.now() + effectiveTtl * 1000).toISOString();
       const payload = {
@@ -356,6 +389,7 @@ export default function HomePage() {
       });
     } finally {
       setLoading(false);
+      setFundProgress(null);
     }
   }
 
@@ -395,7 +429,15 @@ export default function HomePage() {
   const visibleIntents = intents.filter((i) => i.status !== "FAILED");
   const openIntents = visibleIntents.filter((i) => OPEN_STATUSES.includes(i.status));
   const historyIntents = visibleIntents.filter((i) => HISTORY_STATUSES.includes(i.status));
-  const listedIntents = intentTab === "open" ? openIntents : historyIntents;
+  const createdHistory = historyIntents.filter((i) => involvement(i, appParty) === "created");
+  const filledHistory = historyIntents.filter((i) => involvement(i, appParty) === "filled");
+  const filteredHistory =
+    historyRole === "created"
+      ? createdHistory
+      : historyRole === "filled"
+        ? filledHistory
+        : historyIntents;
+  const listedIntents = intentTab === "open" ? openIntents : filteredHistory;
   const sellAvailable = selectedPair
     ? availableForSymbol(balances, selectedPair.sell)
     : null;
@@ -410,8 +452,8 @@ export default function HomePage() {
             <span className="hero-gradient"> lock & settle</span>
           </h1>
           <p>
-            Submit a signed RFQ. Your sell leg locks on-ledger; solvers compete to fill; settlement
-            is atomic DvP. Only you track status after a fill.
+            Submit a signed RFQ. Pay from your Helvex trading balance or from Loop — Helvex locks
+            the sell leg; settlement is atomic DvP.
           </p>
         </div>
         <div className="hero-metrics">
@@ -430,7 +472,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <LoopWalletBanner />
+      {payFrom === "loop" && <LoopWalletBanner />}
 
       <TradingBalancesStrip
         appParty={appParty}
@@ -446,7 +488,7 @@ export default function HomePage() {
           <div className="panel-header">
             <div>
               <h2 className="panel-title">1 · Create RFQ</h2>
-              <p className="panel-subtitle">Pair · size · expiry · sign once</p>
+              <p className="panel-subtitle">Pay from · pair · size · expiry</p>
             </div>
             {selectedPair && (
               <div className="pair-badge">
@@ -456,6 +498,16 @@ export default function HomePage() {
               </div>
             )}
           </div>
+
+          <FundingSourcePicker
+            value={payFrom}
+            onChange={setPayFrom}
+            purpose="create"
+            loopConnected={walletStatus === "connected"}
+            loopParty={wallet?.partyId}
+            connecting={walletStatus === "connecting"}
+            onConnect={() => void connect()}
+          />
 
           {!isDemoMode() && (
             <div className="field">
@@ -481,8 +533,8 @@ export default function HomePage() {
                   </button>
                 </p>
               )}
-              {walletKind === "loop" && !wallet?.partyId && (
-                <p className="field-hint">Connect Wallet from the account menu to sign and fund deposits.</p>
+              {payFrom === "loop" && walletKind === "loop" && !wallet?.partyId && (
+                <p className="field-hint">Connect Loop above to pay from your wallet.</p>
               )}
             </div>
           )}
@@ -534,11 +586,15 @@ export default function HomePage() {
               {selectedPair && (
                 <p className="field-hint">
                   Minimum {selectedPair.minSell} {selectedPair.sell}
-                  {sellAvailable != null && (
-                    <>
-                      {" "}
-                      · Available {formatAmount(sellAvailable)} {selectedPair.sell}
-                    </>
+                  {payFrom === "loop" ? (
+                    <> · Taken from Loop, then locked on Helvex</>
+                  ) : (
+                    sellAvailable != null && (
+                      <>
+                        {" "}
+                        · Available {formatAmount(sellAvailable)} {selectedPair.sell}
+                      </>
+                    )
                   )}
                 </p>
               )}
@@ -598,14 +654,25 @@ export default function HomePage() {
               quoteLoading ||
               pairs.length === 0 ||
               accountFrozen ||
-              (quote ? !quote.withinLimits : false)
+              (quote ? !quote.withinLimits : false) ||
+              (payFrom === "loop" && isLoopWalletEnabled() && walletStatus !== "connected")
             }
           >
             {loading ? (
               <>
                 <span className="spinner" />
-                Signing RFQ…
+                {fundProgress === "preparing"
+                  ? "Preparing…"
+                  : fundProgress === "awaiting_loop"
+                    ? "Waiting for Loop approval…"
+                    : fundProgress === "crediting"
+                      ? "Crediting on Helvex…"
+                      : fundProgress === "locking"
+                        ? "Locking RFQ…"
+                        : "Submitting…"}
               </>
+            ) : payFrom === "loop" && isLoopWalletEnabled() ? (
+              "Approve in Loop and submit"
             ) : (
               "Submit signed RFQ"
             )}
@@ -698,9 +765,9 @@ export default function HomePage() {
       <section className="panel panel-glass intent-book">
         <div className="panel-header">
           <div>
-            <h2 className="panel-title">3 · Your RFQs</h2>
+            <h2 className="panel-title">3 · Your activity</h2>
             <p className="panel-subtitle">
-              Status lives on the creator desk · solvers only see open locks
+              RFQs you created and RFQs you filled · same book for both sides
             </p>
           </div>
           <button
@@ -734,21 +801,60 @@ export default function HomePage() {
           </button>
         </div>
 
+        {intentTab === "history" && historyIntents.length > 0 && (
+          <div className="intent-role-filters" role="group" aria-label="History role">
+            <button
+              type="button"
+              className={`intent-role-filter${historyRole === "all" ? " active" : ""}`}
+              onClick={() => setHistoryRole("all")}
+            >
+              All ({historyIntents.length})
+            </button>
+            <button
+              type="button"
+              className={`intent-role-filter${historyRole === "created" ? " active" : ""}`}
+              onClick={() => setHistoryRole("created")}
+            >
+              Created ({createdHistory.length})
+            </button>
+            <button
+              type="button"
+              className={`intent-role-filter${historyRole === "filled" ? " active" : ""}`}
+              onClick={() => setHistoryRole("filled")}
+            >
+              Filled ({filledHistory.length})
+            </button>
+          </div>
+        )}
+
         {listedIntents.length === 0 ? (
           <div className="empty-state empty-state-premium">
             <div className="empty-state-icon">◎</div>
-            <p>{intentTab === "open" ? "No open RFQs" : "No settled RFQs yet"}</p>
+            <p>
+              {intentTab === "open"
+                ? "No open RFQs"
+                : historyRole === "filled"
+                  ? "No fills yet"
+                  : historyRole === "created"
+                    ? "No created RFQs in history"
+                    : "No settled RFQs yet"}
+            </p>
             <span className="empty-state-sub">
               {intentTab === "open"
-                ? "Submit an RFQ above — it stays here through lock, fill, and settle"
-                : "Completed and expired RFQs appear here with final status"}
+                ? "Submit an RFQ above or fill one on the solver desk — both stay here through settle"
+                : historyRole === "filled"
+                  ? "Accept a LOCKED RFQ on Fill intents — it appears here after MATCHED"
+                  : "Completed and expired RFQs you created or filled appear here"}
             </span>
           </div>
         ) : (
           <div className="intent-list intent-list-grid">
             {listedIntents.map((intent) => {
               const [sell, buy] = intent.pair.split("_");
-              const cancellable = ["SUBMITTED", "LOCK_PENDING", "LOCKED"].includes(intent.status);
+              const role = involvement(intent, appParty);
+              const isMaker = Boolean(appParty && intent.makerParty === appParty);
+              const cancellable =
+                isMaker && ["SUBMITTED", "LOCK_PENDING", "LOCKED"].includes(intent.status);
               return (
                 <article key={intent.intentId} className="intent-card intent-card-premium">
                   <div className="intent-card-top">
@@ -759,15 +865,41 @@ export default function HomePage() {
                         <TokenChip symbol={buy} />
                       </div>
                       <div className="intent-amounts">
-                        Sell {formatAmount(intent.sellAmount)} · Min{" "}
-                        {formatAmount(intent.minBuyAmount)}
+                        {role === "filled" ? (
+                          <>
+                            You paid {formatAmount(intent.fillBuyAmount ?? intent.minBuyAmount)}{" "}
+                            {buy} · received {formatAmount(intent.sellAmount)} {sell}
+                          </>
+                        ) : (
+                          <>
+                            Sell {formatAmount(intent.sellAmount)} · Min{" "}
+                            {formatAmount(intent.minBuyAmount)}
+                            {intent.fillBuyAmount
+                              ? ` · Filled ${formatAmount(intent.fillBuyAmount)}`
+                              : ""}
+                          </>
+                        )}
                       </div>
                     </div>
-                    <StatusBadge status={intent.status} />
+                    <div className="intent-card-badges">
+                      <span className={`intent-role-badge intent-role-badge-${role}`}>
+                        {role === "filled" ? "Filled" : "Created"}
+                      </span>
+                      <StatusBadge status={intent.status} />
+                    </div>
                   </div>
                   <IntentProgress status={intent.status} />
                   <div className="intent-meta">
                     <DeadlineLabel iso={intent.deadline} />
+                    {role === "filled" ? (
+                      <span title={intent.makerParty}>Maker {shortParty(intent.makerParty)}</span>
+                    ) : intent.winningSolver ? (
+                      <span title={intent.winningSolver}>
+                        Solver {shortParty(intent.winningSolver)}
+                      </span>
+                    ) : (
+                      <span>Waiting for a fill</span>
+                    )}
                     <span className="intent-id" title={intent.intentId}>
                       {intent.intentId.slice(0, 8)}…{intent.intentId.slice(-4)}
                     </span>
