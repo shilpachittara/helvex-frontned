@@ -40,12 +40,14 @@ const nextConfig = {
       : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
 
     // connect-src: same-origin covers all API traffic (the app talks to the
-    // backend only through the same-origin /api proxy). The Loop wallet SDK may
-    // reach external origins, so operators can widen this with a SPACE-separated
-    // allowlist instead of the broad `https:`. Defaults stay permissive in dev.
+    // backend only through the same-origin /api proxy). Loop Connect mints a
+    // ticket over HTTPS, then completes the handshake on
+    // `wss://cantonloop.com` (or testnet/devnet hosts). `https:` does not
+    // match `wss:` in CSP, so production must allow websockets or Connect
+    // hangs after the popup/QR with no ticket accept.
     const extraConnect = (process.env.CSP_CONNECT_SRC ?? "").trim();
     const connectSrc = isProd
-      ? `connect-src 'self'${extraConnect ? ` ${extraConnect}` : " https:"}`
+      ? `connect-src 'self' ${extraConnect || "https:"} wss:`
       : "connect-src 'self' https: ws: wss:";
 
     const securityHeaders = [
