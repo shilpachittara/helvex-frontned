@@ -128,11 +128,14 @@ function LoginForm() {
         <div className="login-visual-inner">
           <div className="login-brand-large">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/helvex-mark.svg" alt="Helvex" width={52} height={52} className="brand-mark-img brand-mark-img-lg" />
-            <div>
-              <h2>{process.env.NEXT_PUBLIC_APP_NAME?.trim() || "Helvex"}</h2>
-              <p>Institutional-grade RFQ on Canton Network</p>
-            </div>
+            <img
+              src="/helvex-lockup.svg"
+              alt={process.env.NEXT_PUBLIC_APP_NAME?.trim() || "Helvex"}
+              height={40}
+              width={Math.round(40 * (1753 / 420))}
+              className="brand-lockup brand-lockup-lg"
+            />
+            <p className="login-brand-tagline">Institutional-grade RFQ on Canton Network</p>
           </div>
           <ul className="login-features">
             <li>

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1753 420" width="584" height="140" role="img" aria-label="Helvex">
+<title>Helvex</title>
+
+<g transform="translate(60,60) scale(0.5859375)">
+    <rect x="116" y="104" width="62" height="304" fill="#FFFFFF"/>
+    <rect x="334" y="104" width="62" height="304" fill="#FFFFFF"/>
+    <rect x="178" y="205" width="78" height="46" fill="#FFFFFF"/>
+    <rect x="256" y="261" width="78" height="46" fill="#5C74FF"/>
+    </g>
+<g transform="translate(440.0,303.0) scale(0.25479,-0.25479)"><path transform="translate(0,0)" d="M74 0V688H308V441H613V688H847V0H613V258H308V0Z" fill="#FFFFFF"/><path transform="translate(913,0)" d="M76 0V688H741V520H310V428H680V268H310V168H748V0Z" fill="#FFFFFF"/><path transform="translate(1696,0)" d="M74 0V688H308V183H708V0Z" fill="#FFFFFF"/><path transform="translate(2415,0)" d="M302 0 13 688H268L378 385Q384 371 393.0 344.0Q402 317 412.0 287.5Q422 258 430 233H437Q444 255 453.5 283.5Q463 312 472.5 339.5Q482 367 489 385L601 688H845L556 0Z" fill="#FFFFFF"/><path transform="translate(3265,0)" d="M76 0V688H741V520H310V428H680V268H310V168H748V0Z" fill="#FFFFFF"/><path transform="translate(4048,0)" d="M8 0 295 360 35 688H328L448 519H454L578 688H848L586 364L873 0H580L434 204H428L279 0Z" fill="#5C74FF"/></g>
+</svg>

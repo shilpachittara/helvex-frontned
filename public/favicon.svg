@@ -1,6 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="7" fill="#0C1110"/>
-  <path d="M10 8v16" stroke="#2A9D7A" stroke-width="3.5" stroke-linecap="round"/>
-  <path d="M22 8v16" stroke="#2A9D7A" stroke-width="3.5" stroke-linecap="round"/>
-  <path d="M10 16h12" stroke="#E7EFEB" stroke-width="2.5" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Helvex">
+<title>Helvex</title>
+<rect width="512" height="512" rx="96" fill="#3D5BF5"/>
+<!-- left stem -->
+<rect x="116" y="104" width="62" height="304" fill="#FFFFFF"/>
+<!-- right stem -->
+<rect x="334" y="104" width="62" height="304" fill="#FFFFFF"/>
+<!-- crossbar: two offset halves = the two legs of a swap -->
+<rect x="178" y="205" width="78" height="46" fill="#FFFFFF"/>
+<rect x="256" y="261" width="78" height="46" fill="#FFFFFF"/>
 </svg>

@@ -21,7 +21,10 @@ export const metadata = {
   title: "Helvex · Canton Network",
   description: "Helvex — permissioned intent-based swap on Canton Network.",
   icons: {
-    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+    ],
     apple: [{ url: "/helvex-logo.png" }],
   },
 };

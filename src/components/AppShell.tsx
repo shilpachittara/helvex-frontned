@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { networkBadgeLabel } from "../lib/demo-mode";
-import { HelvexMark, appName } from "./HelvexMark";
+import { HelvexLockup } from "./HelvexMark";
 import { UserMenu } from "./UserMenu";
 
 function networkLabel(): string {
@@ -25,9 +25,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <header className="app-header">
         <div className="app-header-inner">
-          <Link href="/" className="brand">
-            <HelvexMark size={36} />
-            <span className="brand-text">{appName()}</span>
+          <Link href="/" className="brand" aria-label="Helvex home">
+            <HelvexLockup height={28} />
           </Link>
 
           <nav className="app-nav" aria-label="Main">
