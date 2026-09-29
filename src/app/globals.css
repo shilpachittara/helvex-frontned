@@ -5,14 +5,14 @@
   --bg-surface-hover: #171f2a;
   --border: rgba(148, 163, 184, 0.1);
   --border-strong: rgba(148, 163, 184, 0.2);
-  --border-glow: rgba(99, 102, 241, 0.35);
+  --border-glow: rgba(61, 91, 245, 0.35);
   --text: #f8fafc;
   --text-muted: #94a3b8;
   --text-subtle: #64748b;
-  --accent: #6366f1;
-  --accent-hover: #4f46e5;
-  --accent-muted: rgba(99, 102, 241, 0.18);
-  --accent-glow: rgba(99, 102, 241, 0.45);
+  --accent: #3D5BF5;
+  --accent-hover: #2E47D0;
+  --accent-muted: rgba(61, 91, 245, 0.18);
+  --accent-glow: rgba(61, 91, 245, 0.45);
   --cyan: #22d3ee;
   --success: #10b981;
   --success-muted: rgba(16, 185, 129, 0.12);
@@ -25,7 +25,7 @@
   --radius-lg: 20px;
   --radius-xl: 28px;
   --shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
-  --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.15);
+  --shadow-glow: 0 0 40px rgba(61, 91, 245, 0.15);
   --font: var(--font-body, ui-sans-serif, system-ui, sans-serif);
   --font-display: var(--font-display, ui-sans-serif, system-ui, sans-serif);
   --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
@@ -66,7 +66,7 @@ body {
   top: -200px;
   left: 50%;
   transform: translateX(-50%);
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.2), transparent 70%);
+  background: radial-gradient(circle, rgba(61, 91, 245, 0.2), transparent 70%);
 }
 
 .ambient-b {
@@ -226,7 +226,7 @@ a:hover {
 .nav-link.active {
   color: var(--text);
   background: var(--accent-muted);
-  border-color: rgba(99, 102, 241, 0.25);
+  border-color: rgba(61, 91, 245, 0.25);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
@@ -284,15 +284,15 @@ a:hover {
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--text);
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.12));
-  border: 1px solid rgba(139, 92, 246, 0.35);
+  background: linear-gradient(135deg, rgba(61, 91, 245, 0.15), rgba(92, 116, 255, 0.12));
+  border: 1px solid rgba(92, 116, 255, 0.35);
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
 }
 
 .btn-wallet:hover {
-  border-color: rgba(139, 92, 246, 0.6);
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.22), rgba(139, 92, 246, 0.18));
+  border-color: rgba(92, 116, 255, 0.6);
+  background: linear-gradient(135deg, rgba(61, 91, 245, 0.22), rgba(92, 116, 255, 0.18));
 }
 
 .btn-wallet-connected {
@@ -325,8 +325,8 @@ a:hover {
 }
 
 .btn-wallet-primary {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(139, 92, 246, 0.28));
-  border-color: rgba(139, 92, 246, 0.55);
+  background: linear-gradient(135deg, rgba(61, 91, 245, 0.35), rgba(92, 116, 255, 0.28));
+  border-color: rgba(92, 116, 255, 0.55);
   color: #fff;
 }
 
@@ -345,8 +345,8 @@ a:hover {
 }
 
 .alert-info {
-  background: rgba(99, 102, 241, 0.1);
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  background: rgba(61, 91, 245, 0.1);
+  border: 1px solid rgba(61, 91, 245, 0.25);
   color: var(--text);
 }
 
@@ -1093,7 +1093,7 @@ input::placeholder {
 }
 
 .panel-swap {
-  border-color: rgba(99, 102, 241, 0.2);
+  border-color: rgba(61, 91, 245, 0.2);
 }
 
 .grid-2-premium {
@@ -1192,7 +1192,7 @@ input::placeholder {
 
 .btn-glow {
   margin-top: 0.5rem;
-  background: linear-gradient(135deg, var(--accent), #818cf8);
+  background: linear-gradient(135deg, var(--accent), #5C74FF);
   box-shadow: 0 4px 24px var(--accent-glow);
 }
 
@@ -1441,7 +1441,7 @@ input::placeholder {
 .login-visual {
   position: relative;
   padding: 3rem;
-  background: linear-gradient(160deg, rgba(99, 102, 241, 0.15), rgba(3, 5, 8, 0.95));
+  background: linear-gradient(160deg, rgba(61, 91, 245, 0.15), rgba(3, 5, 8, 0.95));
   border-right: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -1995,8 +1995,8 @@ input::placeholder {
 }
 
 .balance-strip-chip-active {
-  border-color: rgba(99, 102, 241, 0.45);
-  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.15);
+  border-color: rgba(61, 91, 245, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(61, 91, 245, 0.15);
 }
 
 .balance-strip-symbol {
@@ -2174,8 +2174,8 @@ input::placeholder {
 .quote-hero {
   padding: 1.25rem 1.35rem;
   border-radius: var(--radius-md);
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px solid rgba(99, 102, 241, 0.22);
+  background: rgba(61, 91, 245, 0.08);
+  border: 1px solid rgba(61, 91, 245, 0.22);
 }
 
 .quote-hero-label {
@@ -2242,9 +2242,9 @@ input::placeholder {
 
 .funding-source-option.active {
   color: var(--text);
-  background: rgba(99, 102, 241, 0.14);
-  border-color: rgba(99, 102, 241, 0.45);
-  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.2);
+  background: rgba(61, 91, 245, 0.14);
+  border-color: rgba(61, 91, 245, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(61, 91, 245, 0.2);
 }
 
 .funding-source-title {
@@ -2314,9 +2314,9 @@ input::placeholder {
 }
 
 .intent-tab.active {
-  background: rgba(99, 102, 241, 0.18);
+  background: rgba(61, 91, 245, 0.18);
   color: var(--text);
-  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(61, 91, 245, 0.35);
 }
 
 .intent-role-filters {
@@ -2344,8 +2344,8 @@ input::placeholder {
 
 .intent-role-filter.active {
   color: var(--text);
-  background: rgba(99, 102, 241, 0.16);
-  border-color: rgba(99, 102, 241, 0.4);
+  background: rgba(61, 91, 245, 0.16);
+  border-color: rgba(61, 91, 245, 0.4);
 }
 
 .intent-card-badges {
@@ -2365,7 +2365,7 @@ input::placeholder {
 
 .intent-role-badge-created {
   color: #c4b5fd;
-  background: rgba(99, 102, 241, 0.16);
+  background: rgba(61, 91, 245, 0.16);
 }
 
 .intent-role-badge-filled {
