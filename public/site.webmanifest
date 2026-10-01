@@ -1,0 +1,61 @@
+{
+  "name": "Helvex — Canton Network RFQ Desk",
+  "short_name": "Helvex",
+  "description": "Permissioned RFQ trading desk on Canton Network. Swap CC, CBTC, and USDCx with firm quotes and atomic settlement.",
+  "id": "/",
+  "start_url": "/login",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#030508",
+  "theme_color": "#3D5BF5",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["finance", "business"],
+  "icons": [
+    {
+      "src": "/favicon-32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-256.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Sign in",
+      "short_name": "Login",
+      "url": "/login",
+      "icons": [{ "src": "/icon-256.png", "sizes": "256x256" }]
+    },
+    {
+      "name": "Request KYC",
+      "short_name": "KYC",
+      "url": "/kyc",
+      "icons": [{ "src": "/icon-256.png", "sizes": "256x256" }]
+    }
+  ],
+  "prefer_related_applications": false
+}
