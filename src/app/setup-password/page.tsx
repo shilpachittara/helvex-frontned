@@ -90,14 +90,14 @@ function SetupPasswordForm() {
               id="setup-token"
               required
               value={token}
-              onChange={(e) => setToken(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))}
+              onChange={(e) => setToken(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12))}
               className="input-mono"
               inputMode="text"
               autoComplete="one-time-code"
-              maxLength={6}
-              pattern="[A-Za-z0-9]{6}"
+              maxLength={12}
+              pattern="[A-Za-z0-9]{12}|[A-Za-z0-9]{6}"
               placeholder="Email verification code"
-              style={{ letterSpacing: "0.2em", textTransform: "uppercase" }}
+              style={{ letterSpacing: "0.12em", textTransform: "uppercase" }}
             />
           </div>
           <div className="field">

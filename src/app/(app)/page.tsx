@@ -48,6 +48,7 @@ interface IntentView {
   winningSolver?: string | null;
   status: string;
   deadline: string;
+  failureReason?: string | null;
 }
 
 function shortParty(party: string) {
@@ -425,10 +426,23 @@ export default function HomePage() {
   }, [session?.user.email, activating]);
 
   const OPEN_STATUSES = ["SUBMITTED", "LOCK_PENDING", "LOCKED", "MATCHED", "SETTLING"];
-  const HISTORY_STATUSES = ["SETTLED", "EXPIRED", "REFUNDED", "CANCELLED"];
-  const visibleIntents = intents.filter((i) => i.status !== "FAILED");
-  const openIntents = visibleIntents.filter((i) => OPEN_STATUSES.includes(i.status));
-  const historyIntents = visibleIntents.filter((i) => HISTORY_STATUSES.includes(i.status));
+  const RESERVE_STATUSES = ["LOCK_PENDING", "LOCKED", "MATCHED", "SETTLING"];
+  const HISTORY_STATUSES = ["SETTLED", "EXPIRED", "REFUNDED", "CANCELLED", "FAILED", "REFUNDING"];
+  const deadlinePassed = (iso: string) => {
+    const t = Date.parse(iso);
+    return Number.isFinite(t) && t <= Date.now();
+  };
+  const visibleIntents = intents;
+  const openIntents = visibleIntents.filter(
+    (i) =>
+      OPEN_STATUSES.includes(i.status) &&
+      !(RESERVE_STATUSES.includes(i.status) && deadlinePassed(i.deadline)),
+  );
+  const historyIntents = visibleIntents.filter(
+    (i) =>
+      HISTORY_STATUSES.includes(i.status) ||
+      (RESERVE_STATUSES.includes(i.status) && deadlinePassed(i.deadline)),
+  );
   const createdHistory = historyIntents.filter((i) => involvement(i, appParty) === "created");
   const filledHistory = historyIntents.filter((i) => involvement(i, appParty) === "filled");
   const filteredHistory =
@@ -904,6 +918,12 @@ export default function HomePage() {
                       {intent.intentId.slice(0, 8)}…{intent.intentId.slice(-4)}
                     </span>
                   </div>
+                  {RESERVE_STATUSES.includes(intent.status) && deadlinePassed(intent.deadline) && (
+                    <p className="intent-amounts">
+                      Deadline passed — this RFQ no longer reduces your available balance.
+                      {intent.failureReason ? ` ${intent.failureReason}` : ""}
+                    </p>
+                  )}
                   {cancellable && (
                     <div className="intent-actions">
                       <button
