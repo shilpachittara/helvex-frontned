@@ -15,10 +15,8 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const googleEnabled = process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true";
 
   // Password setup/reset must not require a session. If middleware (or an old
   // deploy) bounced the user here, send them straight to the right public page
@@ -81,26 +79,6 @@ function LoginForm() {
       setError(err instanceof Error ? err.message : "Sign in failed");
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function onGoogle() {
-    setError(null);
-    setInfo(null);
-    setGoogleLoading(true);
-    try {
-      const result = await signIn("google", { callbackUrl, redirect: false });
-      if (result?.error) {
-        setError(
-          "Google sign-in is only available for KYC-verified accounts with an active password.",
-        );
-      } else if (result?.url) {
-        router.push(result.url);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Google sign-in failed");
-    } finally {
-      setGoogleLoading(false);
     }
   }
 
@@ -200,25 +178,6 @@ function LoginForm() {
               )}
             </button>
           </form>
-
-          {googleEnabled && (
-            <>
-              <div className="login-divider">
-                <span>or</span>
-              </div>
-              <button
-                type="button"
-                className="btn btn-google"
-                onClick={onGoogle}
-                disabled={googleLoading}
-              >
-                {googleLoading ? "Connecting…" : "Continue with Google"}
-              </button>
-              <p className="field-hint" style={{ textAlign: "center", marginTop: "0.5rem" }}>
-                Google works only after KYC approval and password setup.
-              </p>
-            </>
-          )}
 
           <div className="login-auth-links">
             <Link href="/kyc">Request KYC access</Link>
