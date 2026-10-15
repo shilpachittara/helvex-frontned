@@ -5,7 +5,9 @@ import {
   prepareDeposit,
   type Instrument,
 } from "./api";
-import { amountForTransfer } from "./amount";
+import { amountForTransfer, exceedsAvailable } from "./amount";
+import { formatBalanceAmount } from "./format-amount";
+import { unlockedForSymbol, type LoopHoldingView } from "./loop-holdings";
 import type { BalanceView } from "./api";
 
 function availableForSymbol(balances: BalanceView[], symbol: string): string | null {
@@ -66,12 +68,23 @@ export async function fundFromLoop(opts: {
   symbol: string;
   amount: string;
   transfer: LoopTransferFn;
+  /** When set, refuse the transfer if Loop's unlocked balance is short. */
+  readHoldings?: () => Promise<LoopHoldingView[]>;
   onProgress?: (stage: FundFromLoopProgress) => void;
   timeoutMs?: number;
 }): Promise<void> {
   const amount = amountForTransfer(opts.symbol, opts.amount);
   const instrument = toDepositInstrument(opts.symbol);
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
+  if (opts.readHoldings) {
+    const unlocked = unlockedForSymbol(await opts.readHoldings(), opts.symbol);
+    if (exceedsAvailable(amount, unlocked)) {
+      throw new Error(
+        `Amount is above the Loop balance of ${formatBalanceAmount(unlocked, instrument)} ${instrument}.`,
+      );
+    }
+  }
 
   opts.onProgress?.("preparing");
   const prepared = await prepareDeposit(opts.appParty, {

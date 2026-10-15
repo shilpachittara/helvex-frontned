@@ -69,7 +69,7 @@ function LoginForm() {
       });
 
       if (result?.error) {
-        setError("Invalid email or password. Approved users must complete password setup first.");
+        setError("Invalid email or password.");
         return;
       }
 

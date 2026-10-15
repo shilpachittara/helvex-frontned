@@ -66,3 +66,81 @@ export function amountForTransfer(symbol: string, raw: string): string {
   }
   return amount;
 }
+
+/**
+ * True when a typed amount is strictly above the available balance.
+ * Missing or unreadable available balance is treated as zero.
+ */
+export function exceedsAvailable(requested: string, available: string): boolean {
+  if (!isValidAmount(requested)) return false;
+  return comparePositiveDecimals(normalizeAmount(requested), available) > 0;
+}
+
+/** Decimal places accepted for a sell amount of this token. */
+export function sellDecimals(symbol: string): number {
+  const key = symbol.trim().toUpperCase();
+  return TRANSFER_DECIMALS[key] ?? TRANSFER_DECIMALS[symbol.trim()] ?? 10;
+}
+
+/**
+ * Smallest sell amount that clears the token minimums and the USD trade floor.
+ * Returns null when `sellAmount` is already large enough, or when the quote
+ * cannot be scaled (missing price, or already above the USD maximum).
+ *
+ * A 2% cushion keeps a price tick from landing the next quote back under $10.
+ */
+export function raisedSellAmount(input: {
+  sellAmount: string;
+  notionalUsd: number;
+  minNotionalUsd: number;
+  maxNotionalUsd: number;
+  rate: number;
+  minBuy: string;
+  minSell: string;
+  sellDecimals: number;
+}): string | null {
+  const sell = Number(input.sellAmount);
+  if (!(sell > 0) || !Number.isFinite(sell)) return null;
+  if (input.maxNotionalUsd > 0 && input.notionalUsd > input.maxNotionalUsd) return null;
+
+  let need = Math.max(sell, Number(input.minSell) || 0);
+  const usdPerUnit = input.notionalUsd / sell;
+  if (input.minNotionalUsd > 0 && input.notionalUsd < input.minNotionalUsd && usdPerUnit > 0) {
+    need = Math.max(need, input.minNotionalUsd / usdPerUnit);
+  }
+  const minBuy = Number(input.minBuy);
+  if (minBuy > 0 && input.rate > 0 && sell * input.rate < minBuy) {
+    need = Math.max(need, minBuy / input.rate);
+  }
+  if (!(need > sell * 1.0000001)) return null;
+
+  const cushion = input.minNotionalUsd > 0 && input.notionalUsd < input.minNotionalUsd ? 1.02 : 1;
+  return ceilDecimal(need * cushion, input.sellDecimals);
+}
+
+function ceilDecimal(value: number, decimals: number): string {
+  const places = Math.max(0, Math.min(18, Math.floor(decimals)));
+  const factor = 10 ** places;
+  const ceiled = Math.ceil(value * factor - 1e-8) / factor;
+  const fixed = ceiled.toFixed(places);
+  const [whole, frac = ""] = fixed.split(".");
+  const trimmed = frac.replace(/0+$/, "");
+  return trimmed ? `${whole.replace(/^0+(?=\d)/, "") || "0"}.${trimmed}` : whole.replace(/^0+(?=\d)/, "") || "0";
+}
+
+function comparePositiveDecimals(left: string, right: string): number {
+  const parse = (raw: string): [string, string] => {
+    const trimmed = raw.trim();
+    if (!/^\d+(\.\d+)?$/.test(trimmed)) return ["0", ""];
+    const [whole, frac = ""] = trimmed.split(".");
+    return [whole.replace(/^0+/, "") || "0", frac.replace(/0+$/, "")];
+  };
+  const [lw, lf] = parse(left);
+  const [rw, rf] = parse(right);
+  const scale = Math.max(lf.length, rf.length);
+  const l = BigInt(lw + lf.padEnd(scale, "0"));
+  const r = BigInt(rw + rf.padEnd(scale, "0"));
+  if (l > r) return 1;
+  if (l < r) return -1;
+  return 0;
+}

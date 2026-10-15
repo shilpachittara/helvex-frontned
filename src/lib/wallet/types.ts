@@ -1,4 +1,5 @@
 import type { CanonicalIntentPayload } from "@intent-swap/domain";
+import type { LoopHoldingView } from "../loop-holdings";
 
 export type WalletKind = "dev" | "loop";
 
@@ -30,6 +31,8 @@ export interface WalletContextValue {
   signIntent: (payload: CanonicalIntentPayload) => Promise<string>;
   /** Transfer from the connected Loop wallet (deposit into the app party). */
   transfer: (input: WalletTransferInput) => Promise<void>;
+  /** Unlocked holdings on the connected Loop party. */
+  readLoopHoldings: () => Promise<LoopHoldingView[]>;
 }
 
 export type LoopNetwork = "local" | "devnet" | "testnet" | "mainnet";
@@ -49,6 +52,8 @@ export interface LoopProvider {
   party_id: string;
   email?: string;
   signMessage(message: string): Promise<unknown>;
+  /** Unlocked and locked coin totals for the connected Loop party. */
+  getHolding?(): Promise<unknown>;
   transfer?(
     recipient: string,
     amount: string | number,

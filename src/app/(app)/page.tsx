@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
   cancelIntent,
@@ -12,11 +12,14 @@ import {
   type QuoteView,
 } from "../../lib/api";
 import { formatAmount } from "../../lib/format-amount";
-import { isValidAmount, normalizeAmount } from "../../lib/amount";
+import { exceedsAvailable, isValidAmount, normalizeAmount, raisedSellAmount, sellDecimals } from "../../lib/amount";
+import { unlockedForSymbol } from "../../lib/loop-holdings";
+import { useLoopHoldings } from "../../lib/use-loop-holdings";
 import { isDemoMode } from "../../lib/demo-mode";
 import { useWallet } from "../../lib/wallet/WalletProvider";
 import type { PairId } from "../../lib/signing";
 import { PartyAccessBanner } from "../../components/AccessGate";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { DeadlineLabel } from "../../components/ClientTime";
 import { FundingSourcePicker, useFundingSource } from "../../components/FundingSource";
 import { LoopWalletBanner } from "../../components/WalletConnect";
@@ -112,9 +115,11 @@ function TokenChip({ symbol }: { symbol: string }) {
 
 export default function HomePage() {
   const { data: session } = useSession();
-  const { kind: walletKind, wallet, status: walletStatus, connect, transfer, signIntent } =
+  const { kind: walletKind, wallet, status: walletStatus, connect, transfer, signIntent, readLoopHoldings } =
     useWallet();
   const [payFrom, setPayFrom] = useFundingSource();
+  const payingFromLoop = isLoopWalletEnabled() && payFrom === "loop";
+  const loopHoldings = useLoopHoldings(payingFromLoop && walletStatus === "connected");
   const [fundProgress, setFundProgress] = useState<FundFromLoopProgress | "locking" | null>(
     null,
   );
@@ -137,6 +142,8 @@ export default function HomePage() {
   const [activating, setActivating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [pendingCancel, setPendingCancel] = useState<IntentView | null>(null);
+  const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [intentTab, setIntentTab] = useState<"open" | "history">("open");
   const [historyRole, setHistoryRole] = useState<"all" | "created" | "filled">("all");
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(
@@ -182,6 +189,11 @@ export default function HomePage() {
   }, [session?.user.email]);
 
   const selectedPair = pairs.find((p) => p.id === pair);
+  const loopUnlocked =
+    payingFromLoop && selectedPair && loopHoldings.holdings
+      ? unlockedForSymbol(loopHoldings.holdings, selectedPair.sell)
+      : null;
+  const overLoopBalance = loopUnlocked != null && exceedsAvailable(sellAmount, loopUnlocked);
   const ttlOptions = selectedPair
     ? ttlOptionsForMax(selectedPair.maxTtlSeconds)
     : [...TTL_PRESETS_SECONDS];
@@ -239,7 +251,10 @@ export default function HomePage() {
 
   const cancelIntentHandler = useCallback(
     async (intentId: string) => {
-      if (!appParty) return;
+      if (!appParty) {
+        setPendingCancel(null);
+        return;
+      }
       setCancellingId(intentId);
       setMessage(null);
       try {
@@ -253,6 +268,7 @@ export default function HomePage() {
         });
       } finally {
         setCancellingId(null);
+        setPendingCancel(null);
       }
     },
     [appParty, refreshIntents, refreshBalances],
@@ -262,10 +278,24 @@ export default function HomePage() {
     void refreshIntents();
   }, [refreshIntents]);
 
+  // Each pair has its own minimum. Apply it once per selection so a later
+  // pairs refresh does not wipe an amount the user already typed.
+  // autoSizePair stays set until the first quote lifts that minimum up to the
+  // $10 floor (and the buy-token minimum). A keystroke clears it.
+  const amountsAppliedFor = useRef<string | null>(null);
+  const autoSizePair = useRef<string | null>(null);
+  const autoSizeAttempts = useRef(0);
   useEffect(() => {
     if (!selectedPair) return;
+    if (amountsAppliedFor.current === selectedPair.id) return;
+    amountsAppliedFor.current = selectedPair.id;
+    autoSizePair.current = selectedPair.id;
+    autoSizeAttempts.current = 0;
+    setQuote(null);
+    setQuoteError(null);
+    setSellAmount(selectedPair.minSell);
     setMinBuyAmount(selectedPair.minBuy);
-  }, [pair, selectedPair]);
+  }, [selectedPair]);
 
   // Live quote: fetch an indicative price and use its `minReceive` as the
   // signed intent's minBuyAmount (v1 firm quote). Debounced on amount/pair.
@@ -287,6 +317,24 @@ export default function HomePage() {
       fetchQuote(pair, sellAmount)
         .then((q) => {
           if (cancelled) return;
+          if (selectedPair && autoSizePair.current === pair && autoSizeAttempts.current < 4) {
+            const next = raisedSellAmount({
+              sellAmount,
+              notionalUsd: Number(q.notionalUsd),
+              minNotionalUsd: q.minNotionalUsd,
+              maxNotionalUsd: q.maxNotionalUsd,
+              rate: Number(q.rate),
+              minBuy: selectedPair.minBuy,
+              minSell: selectedPair.minSell,
+              sellDecimals: sellDecimals(selectedPair.sell),
+            });
+            if (next) {
+              autoSizeAttempts.current += 1;
+              setSellAmount(next);
+              return;
+            }
+          }
+          autoSizePair.current = null;
           setQuote(q);
           setQuoteError(null);
           setMinBuyAmount(q.minReceive);
@@ -307,45 +355,51 @@ export default function HomePage() {
   }, [pair, sellAmount, selectedPair]);
 
   async function submitIntent() {
+    const reject = (text: string) => {
+      setConfirmSubmit(false);
+      setMessage({ type: "error", text });
+    };
     setMessage(null);
     if (!appParty) {
-      setMessage({
-        type: "error",
-        text: "Activate a trading account on the Account page before submitting intents.",
-      });
+      reject("Activate a trading account on the Account page before submitting intents.");
       return;
     }
     if (!isValidAmount(sellAmount)) {
-      setMessage({ type: "error", text: "Enter a valid sell amount (a positive number)." });
+      reject("Enter a valid sell amount (a positive number).");
       return;
     }
     if (!isValidAmount(minBuyAmount)) {
-      setMessage({
-        type: "error",
-        text: "Enter a valid minimum received amount (a positive number).",
-      });
+      reject("Enter a valid minimum received amount (a positive number).");
       return;
     }
     // Don't sign against a stale/in-flight quote: the live quote updates
     // minBuyAmount, so submitting mid-refresh could sign terms that don't match
     // the price shown.
     if (quoteLoading) {
-      setMessage({ type: "error", text: "Hold on — fetching the latest price. Try again in a moment." });
+      reject("Hold on — fetching the latest price. Try again in a moment.");
       return;
     }
     if (quote && !quote.withinLimits) {
-      setMessage({
-        type: "error",
-        text: `Trade size ($${quote.notionalUsd}) must be between $${quote.minNotionalUsd} and $${quote.maxNotionalUsd}.`,
-      });
+      reject(
+        `Trade size ($${quote.notionalUsd}) must be between $${quote.minNotionalUsd} and $${quote.maxNotionalUsd}.`,
+      );
       return;
     }
     const maxTtl = selectedPair?.maxTtlSeconds ?? 86400;
     const effectiveTtl = Math.min(Math.max(60, ttlSeconds), maxTtl);
     const useLoop = isLoopWalletEnabled() && payFrom === "loop";
     if (useLoop && walletStatus !== "connected") {
-      setMessage({ type: "error", text: "Connect Loop before paying from your wallet." });
+      reject("Connect Loop before paying from your wallet.");
       return;
+    }
+    if (!useLoop && selectedPair) {
+      const helvexAvailable = availableForSymbol(balances, selectedPair.sell);
+      if (helvexAvailable != null && exceedsAvailable(sellAmount, helvexAvailable)) {
+        reject(
+          `Amount is above the Helvex balance of ${formatAmount(helvexAvailable)} ${selectedPair.sell}.`,
+        );
+        return;
+      }
     }
     setLoading(true);
     try {
@@ -355,6 +409,7 @@ export default function HomePage() {
           symbol: selectedPair?.sell ?? pair.split("_")[0] ?? "CC",
           amount: normalizeAmount(sellAmount),
           transfer,
+          readHoldings: readLoopHoldings,
           onProgress: setFundProgress,
         });
         await refreshBalances();
@@ -391,6 +446,7 @@ export default function HomePage() {
     } finally {
       setLoading(false);
       setFundProgress(null);
+      setConfirmSubmit(false);
     }
   }
 
@@ -455,6 +511,8 @@ export default function HomePage() {
   const sellAvailable = selectedPair
     ? availableForSymbol(balances, selectedPair.sell)
     : null;
+  const overHelvexBalance =
+    !payingFromLoop && sellAvailable != null && exceedsAvailable(sellAmount, sellAvailable);
 
   return (
     <div className="rfq-desk">
@@ -592,7 +650,10 @@ export default function HomePage() {
                 type="text"
                 inputMode="decimal"
                 value={sellAmount}
-                onChange={(e) => setSellAmount(e.target.value)}
+                onChange={(e) => {
+                  autoSizePair.current = null;
+                  setSellAmount(e.target.value);
+                }}
                 placeholder={selectedPair?.minSell ?? "0"}
                 aria-label="Sell amount"
                 className="swap-amount-input"
@@ -600,13 +661,17 @@ export default function HomePage() {
               {selectedPair && (
                 <p className="field-hint">
                   Minimum {selectedPair.minSell} {selectedPair.sell}
-                  {payFrom === "loop" ? (
-                    <> · Taken from Loop, then locked on Helvex</>
+                  {payingFromLoop ? (
+                    <>
+                      {" "}
+                      · Loop available{" "}
+                      {loopUnlocked == null ? "…" : formatAmount(loopUnlocked)} {selectedPair.sell}
+                    </>
                   ) : (
                     sellAvailable != null && (
                       <>
                         {" "}
-                        · Available {formatAmount(sellAvailable)} {selectedPair.sell}
+                        · Helvex available {formatAmount(sellAvailable)} {selectedPair.sell}
                       </>
                     )
                   )}
@@ -659,17 +724,34 @@ export default function HomePage() {
             </p>
           </div>
 
+          {payingFromLoop && walletStatus === "connected" && (overLoopBalance || loopHoldings.error) && (
+            <div className="alert alert-error" role="alert">
+              {overLoopBalance && selectedPair
+                ? `Amount is above the Loop balance of ${formatAmount(loopUnlocked)} ${selectedPair.sell}.`
+                : loopHoldings.error}
+            </div>
+          )}
+          {!payingFromLoop && overHelvexBalance && selectedPair && (
+            <div className="alert alert-error" role="alert">
+              Amount is above the Helvex balance of {formatAmount(sellAvailable)} {selectedPair.sell}.
+            </div>
+          )}
+
           <button
             type="button"
             className="btn btn-primary btn-glow"
-            onClick={submitIntent}
+            onClick={() => setConfirmSubmit(true)}
             disabled={
               loading ||
               quoteLoading ||
               pairs.length === 0 ||
               accountFrozen ||
               (quote ? !quote.withinLimits : false) ||
-              (payFrom === "loop" && isLoopWalletEnabled() && walletStatus !== "connected")
+              (payFrom === "loop" && isLoopWalletEnabled() && walletStatus !== "connected") ||
+              (payingFromLoop &&
+                walletStatus === "connected" &&
+                (loopHoldings.loading || Boolean(loopHoldings.error) || overLoopBalance || loopUnlocked == null)) ||
+              overHelvexBalance
             }
           >
             {loading ? (
@@ -691,6 +773,51 @@ export default function HomePage() {
               "Submit signed RFQ"
             )}
           </button>
+          <ConfirmDialog
+            open={confirmSubmit}
+            titleId="rfq-confirm-title"
+            title="Confirm RFQ"
+            confirmLabel="Submit RFQ"
+            busy={loading}
+            onClose={() => {
+              if (!loading) setConfirmSubmit(false);
+            }}
+            onConfirm={() => void submitIntent()}
+          >
+            <p>Confirm that you want to submit this transaction.</p>
+            <p>
+              Once confirmed,{" "}
+              <strong>
+                {normalizeAmount(sellAmount)} {selectedPair?.sell ?? "tokens"}
+              </strong>{" "}
+              will be locked. You will not be able to move those funds unless you cancel this RFQ.
+            </p>
+          </ConfirmDialog>
+          <ConfirmDialog
+            open={pendingCancel != null}
+            titleId="rfq-cancel-title"
+            title="Cancel RFQ"
+            confirmLabel="Cancel RFQ"
+            dismissLabel="Keep RFQ"
+            busy={pendingCancel != null && cancellingId === pendingCancel.intentId}
+            onClose={() => {
+              if (!cancellingId) setPendingCancel(null);
+            }}
+            onConfirm={() => {
+              if (pendingCancel) void cancelIntentHandler(pendingCancel.intentId);
+            }}
+          >
+            <p>Confirm that you want to cancel this RFQ.</p>
+            <p>
+              Once confirmed,{" "}
+              <strong>
+                {pendingCancel
+                  ? `${formatAmount(pendingCancel.sellAmount)} ${pendingCancel.pair.split("_")[0] ?? ""}`
+                  : ""}
+              </strong>{" "}
+              will be unlocked and returned. You will be able to move those funds again.
+            </p>
+          </ConfirmDialog>
 
           {accountFrozen && (
             <div className="alert alert-error">
@@ -929,7 +1056,7 @@ export default function HomePage() {
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
-                        onClick={() => cancelIntentHandler(intent.intentId)}
+                        onClick={() => setPendingCancel(intent)}
                         disabled={cancellingId === intent.intentId}
                       >
                         {cancellingId === intent.intentId ? "Cancelling…" : "Cancel RFQ"}

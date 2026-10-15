@@ -30,7 +30,9 @@ import {
   type WalletProfile,
   type WithdrawalView,
 } from "../../../lib/api";
-import { isValidAmount, normalizeAmount } from "../../../lib/amount";
+import { exceedsAvailable, isValidAmount, normalizeAmount } from "../../../lib/amount";
+import { unlockedForSymbol } from "../../../lib/loop-holdings";
+import { useLoopHoldings } from "../../../lib/use-loop-holdings";
 import { isDemoMode } from "../../../lib/demo-mode";
 import { formatAmount, formatBalanceAmount } from "../../../lib/format-amount";
 import { formatUtcDate, formatUtcDateTime } from "../../../lib/format-time";
@@ -228,7 +230,7 @@ export default function AccountPage() {
         </div>
       ) : !appParty ? (
         <div className="account-sections">
-          <WalletCard profile={profile} onLinked={loadProfile} />
+          <WalletCard onLinked={loadProfile} />
 
           <section className="panel panel-glass account-section">
             <div className="panel-header">
@@ -261,7 +263,7 @@ export default function AccountPage() {
         </div>
       ) : (
         <div className="account-sections">
-          <WalletCard profile={profile} onLinked={loadProfile} />
+          <WalletCard onLinked={loadProfile} />
 
           <section className="panel panel-glass account-section">
             <div className="panel-header">
@@ -395,19 +397,15 @@ function CopyButton({ value, label }: { value: string; label?: string }) {
 }
 
 /**
- * One clear place for everything Loop: connection status, the linked withdraw
- * destination, connect/disconnect, and link errors. Everything below (deposit,
- * withdraw) depends on the state shown here.
+ * Connection status, connect/disconnect, and link errors. The linked party
+ * itself is shown once, under Identity.
  */
 function WalletCard({
-  profile,
   onLinked,
 }: {
-  profile: WalletProfile | null;
   onLinked: () => Promise<WalletProfile | undefined>;
 }) {
   const { kind, status, wallet, error, linkMessage, linkState, connect, disconnect } = useWallet();
-  const demo = isDemoMode();
 
   // A successful link updates loopPartyId server-side — pull the fresh profile
   // so the "Linked Loop party" rows on this page update without a reload.
@@ -418,7 +416,6 @@ function WalletCard({
   if (kind !== "loop") return null;
 
   const connected = status === "connected" && Boolean(wallet?.partyId);
-  const linkedParty = profile?.loopPartyId ?? profile?.cantonPartyId ?? null;
 
   return (
     <section className="panel panel-glass account-section wallet-card">
@@ -458,28 +455,6 @@ function WalletCard({
                 ? "Waiting for Loop popup…"
                 : "Not connected"}
           </span>
-        </div>
-        {connected && wallet?.partyId && !demo && (
-          <div className="account-id-row">
-            <span className="account-id-label">Loop party</span>
-            <span className="account-id-value input-mono wallet-party" title={wallet.partyId}>
-              {shortPartyId(wallet.partyId)}
-              <CopyButton value={wallet.partyId} />
-            </span>
-          </div>
-        )}
-        <div className="account-id-row">
-          <span className="account-id-label">Withdraw destination</span>
-          {linkedParty && !demo ? (
-            <span className="account-id-value input-mono wallet-party" title={linkedParty}>
-              {shortPartyId(linkedParty)}
-              <CopyButton value={linkedParty} />
-            </span>
-          ) : (
-            <span className="account-id-value">
-              {demo && linkedParty ? "Linked (hidden in demo)" : "Not linked — connect to link it"}
-            </span>
-          )}
         </div>
       </div>
 
@@ -694,6 +669,13 @@ function DepositPanel({
   const [busy, setBusy] = useState(false);
   const [awaitingLoop, setAwaitingLoop] = useState(false);
   const [depositTo, setDepositTo] = useState<string | null>(null);
+  const loop = useLoopHoldings(loopReady);
+  const label = currencyLabel(instrument);
+  const unlocked = loop.holdings ? unlockedForSymbol(loop.holdings, instrument) : null;
+  const overLoop = unlocked != null && exceedsAvailable(amount, unlocked);
+  const loopBalanceError = overLoop
+    ? `Amount is above the Loop balance of ${formatBalanceAmount(unlocked, label)} ${label}.`
+    : loop.error;
 
   async function submit() {
     if (!isValidAmount(amount)) {
@@ -703,6 +685,23 @@ function DepositPanel({
     setBusy(true);
     try {
       const sendAmount = normalizeAmount(amount);
+      let freshUnlocked: string;
+      try {
+        freshUnlocked = unlockedForSymbol(await loop.refresh(), instrument);
+      } catch (err) {
+        onDone({
+          type: "error",
+          text: err instanceof Error ? err.message : "Couldn't read your Loop balance.",
+        });
+        return;
+      }
+      if (exceedsAvailable(sendAmount, freshUnlocked)) {
+        onDone({
+          type: "error",
+          text: `Amount is above the Loop balance of ${formatBalanceAmount(freshUnlocked, label)} ${label}.`,
+        });
+        return;
+      }
       const { deposit, depositTo: to, loopInstrument } = await prepareDeposit(appParty, {
         instrument,
         amount: sendAmount,
@@ -770,6 +769,27 @@ function DepositPanel({
             placeholder="0.0"
             className="input-mono"
           />
+          {loopReady && (
+            <div className="fund-max-row">
+              <span>
+                Max available in Loop:{" "}
+                {unlocked == null ? "…" : `${formatBalanceAmount(unlocked, label)} ${label}`}
+              </span>
+              <button
+                type="button"
+                className="fund-max-btn"
+                onClick={() => unlocked && setAmount(unlocked)}
+                disabled={busy || unlocked == null || !isValidAmount(unlocked)}
+              >
+                Use max
+              </button>
+            </div>
+          )}
+          {loopReady && loopBalanceError && (
+            <div className="alert alert-error" role="alert">
+              {loopBalanceError}
+            </div>
+          )}
         </div>
       </div>
       {loopReady ? (
@@ -777,7 +797,14 @@ function DepositPanel({
           type="button"
           className="btn btn-primary fund-ops-btn"
           onClick={submit}
-          disabled={busy || !isValidAmount(amount)}
+          disabled={
+            busy ||
+            !isValidAmount(amount) ||
+            overLoop ||
+            loop.loading ||
+            unlocked == null ||
+            Boolean(loop.error)
+          }
         >
           {busy ? (
             <>
@@ -840,12 +867,17 @@ function WithdrawPanel({
   const [confirming, setConfirming] = useState(false);
   const available = balanceFor(balances, instrument);
   const label = currencyLabel(instrument);
+  const overAvailable = exceedsAvailable(amount, available);
+  const balanceError = overAvailable
+    ? `Amount is above the available balance of ${formatBalanceAmount(available, label)} ${label}.`
+    : null;
 
   function openConfirm() {
     if (!isValidAmount(amount)) {
       onDone({ type: "error", text: "Enter a valid amount greater than zero." });
       return;
     }
+    if (exceedsAvailable(amount, available)) return;
     if (!destination) {
       onDone({
         type: "error",
@@ -857,7 +889,7 @@ function WithdrawPanel({
   }
 
   async function submit() {
-    if (!destination || !isValidAmount(amount)) return;
+    if (!destination || !isValidAmount(amount) || exceedsAvailable(amount, available)) return;
     setBusy(true);
     try {
       await requestWithdrawal(appParty, {
@@ -913,11 +945,16 @@ function WithdrawPanel({
               type="button"
               className="fund-max-btn"
               onClick={() => setAmount(available)}
-              disabled={busy}
+              disabled={busy || !isValidAmount(available)}
             >
               Use max
             </button>
           </div>
+          {balanceError && (
+            <div className="alert alert-error" role="alert">
+              {balanceError}
+            </div>
+          )}
         </div>
       </div>
       {destination ? (
@@ -925,7 +962,7 @@ function WithdrawPanel({
           type="button"
           className="btn btn-primary fund-ops-btn"
           onClick={openConfirm}
-          disabled={busy || !isValidAmount(amount)}
+          disabled={busy || !isValidAmount(amount) || overAvailable}
         >
           {busy ? <span className="spinner" /> : "Request withdrawal"}
         </button>
@@ -982,7 +1019,7 @@ function WithdrawPanel({
                   type="button"
                   className="btn btn-primary"
                   onClick={() => void submit()}
-                  disabled={busy}
+                  disabled={busy || overAvailable}
                 >
                   {busy ? <span className="spinner" /> : "Confirm withdrawal"}
                 </button>

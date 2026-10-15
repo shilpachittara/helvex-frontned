@@ -21,6 +21,7 @@ import {
   partyFromProvider,
   transferWithLoop,
 } from "./loop-client";
+import { parseLoopHoldings } from "../loop-holdings";
 import { isDemoMode } from "../demo-mode";
 import { isLoopWalletEnabled, loopNetworkFromEnv, usesSessionIntentSignature } from "./config";
 import { signIntentPayload } from "./sign-intent";
@@ -240,6 +241,17 @@ export function WalletProvider({
     [kind],
   );
 
+  const readLoopHoldings = useCallback(async () => {
+    const provider = providerRef.current;
+    if (kind !== "loop" || !provider) {
+      throw new Error("Connect your Loop wallet before reading its balance.");
+    }
+    if (typeof provider.getHolding !== "function") {
+      throw new Error("This Loop wallet cannot report a balance.");
+    }
+    return parseLoopHoldings(await provider.getHolding());
+  }, [kind]);
+
   const value = useMemo<WalletContextValue>(
     () => ({
       kind,
@@ -252,8 +264,21 @@ export function WalletProvider({
       disconnect,
       signIntent,
       transfer,
+      readLoopHoldings,
     }),
-    [kind, status, wallet, error, linkMessage, linkState, connect, disconnect, signIntent, transfer],
+    [
+      kind,
+      status,
+      wallet,
+      error,
+      linkMessage,
+      linkState,
+      connect,
+      disconnect,
+      signIntent,
+      transfer,
+      readLoopHoldings,
+    ],
   );
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

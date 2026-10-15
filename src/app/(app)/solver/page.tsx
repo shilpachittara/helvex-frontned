@@ -5,10 +5,14 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, fetchWalletProfile } from "../../../lib/api";
 import { isDemoMode } from "../../../lib/demo-mode";
-import { amountForTransfer, normalizeAmount } from "../../../lib/amount";
+import { amountForTransfer, exceedsAvailable, normalizeAmount } from "../../../lib/amount";
+import { unlockedForSymbol } from "../../../lib/loop-holdings";
+import { useLoopHoldings } from "../../../lib/use-loop-holdings";
 import { formatAmount } from "../../../lib/format-amount";
 import type { PairId } from "@intent-swap/domain";
 import { PartyAccessBanner } from "../../../components/AccessGate";
+import { ConfirmDialog } from "../../../components/ConfirmDialog";
+import { DeadlineLabel } from "../../../components/ClientTime";
 import { FundingSourcePicker, useFundingSource } from "../../../components/FundingSource";
 import { StatusBadge } from "../../../components/StatusBadge";
 import {
@@ -56,8 +60,10 @@ function TokenChip({ symbol }: { symbol: string }) {
 
 export default function SolverPage() {
   const { data: session } = useSession();
-  const { wallet, status: walletStatus, connect, transfer } = useWallet();
+  const { wallet, status: walletStatus, connect, transfer, readLoopHoldings } = useWallet();
   const [payFrom, setPayFrom] = useFundingSource();
+  const payingFromLoop = isLoopWalletEnabled() && payFrom === "loop";
+  const loopHoldings = useLoopHoldings(payingFromLoop && walletStatus === "connected");
   const [fundProgress, setFundProgress] = useState<FundFromLoopProgress | "filling" | null>(
     null,
   );
@@ -69,6 +75,7 @@ export default function SolverPage() {
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingFill, setPendingFill] = useState<IntentView | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const {
     balances,
@@ -121,7 +128,7 @@ export default function SolverPage() {
     [intents],
   );
 
-  async function fill(intent: IntentView) {
+  function requestFill(intent: IntentView) {
     if (!solver) {
       setError("Activate your trading account before filling intents.");
       return;
@@ -145,6 +152,55 @@ export default function SolverPage() {
       setError("Connect Loop before paying from your wallet.");
       return;
     }
+    if (!useLoop) {
+      const buySymbol = intent.pair.split("_")[1] ?? "";
+      const helvexAvailable = availableForSymbol(balances, buySymbol);
+      if (helvexAvailable != null && exceedsAvailable(amount, helvexAvailable)) {
+        setError(
+          `Amount is above the Helvex balance of ${formatAmount(helvexAvailable)} ${buySymbol}.`,
+        );
+        return;
+      }
+    }
+    setError(null);
+    setPendingFill(intent);
+  }
+
+  async function fill(intent: IntentView) {
+    setPendingFill(null);
+    if (!solver) {
+      setError("Activate your trading account before filling intents.");
+      return;
+    }
+    const raw = buyAmount[intent.intentId]?.trim();
+    let amount: string;
+    if (!raw) {
+      amount = intent.minBuyAmount;
+    } else if (/^\d+(\.\d+)?$/.test(raw)) {
+      amount = raw;
+    } else {
+      setError("Enter a valid fill amount (a positive number), or leave blank for the minimum.");
+      return;
+    }
+    if (Number.parseFloat(amount) <= 0) {
+      setError("Fill amount must be greater than zero.");
+      return;
+    }
+    const useLoop = isLoopWalletEnabled() && payFrom === "loop";
+    if (useLoop && walletStatus !== "connected") {
+      setError("Connect Loop before paying from your wallet.");
+      return;
+    }
+    if (!useLoop) {
+      const buySymbol = intent.pair.split("_")[1] ?? "";
+      const helvexAvailable = availableForSymbol(balances, buySymbol);
+      if (helvexAvailable != null && exceedsAvailable(amount, helvexAvailable)) {
+        setError(
+          `Amount is above the Helvex balance of ${formatAmount(helvexAvailable)} ${buySymbol}.`,
+        );
+        return;
+      }
+    }
     setLoadingId(intent.intentId);
     setError(null);
     setNotice(null);
@@ -157,6 +213,7 @@ export default function SolverPage() {
         symbol: buy,
         amount: buyAmount,
         transfer,
+        readHoldings: readLoopHoldings,
         onProgress: setFundProgress,
       });
       await refreshBalances();
@@ -179,6 +236,7 @@ export default function SolverPage() {
     } finally {
       setLoadingId(null);
       setFundProgress(null);
+      setPendingFill(null);
     }
   }
 
@@ -273,6 +331,9 @@ export default function SolverPage() {
         )}
 
         {error && <div className="alert alert-error">{error}</div>}
+        {payingFromLoop && loopHoldings.error && (
+          <div className="alert alert-error">{loopHoldings.error}</div>
+        )}
         {notice && <div className="alert alert-success">{notice}</div>}
 
         {solverTab === "fills" ? (
@@ -330,6 +391,14 @@ export default function SolverPage() {
             {openQueue.map((intent) => {
               const [sell, buy] = intent.pair.split("_");
               const buyAvail = availableForSymbol(balances, buy);
+              const typedFill = buyAmount[intent.intentId] ?? formatAmount(intent.minBuyAmount);
+              const loopUnlocked = loopHoldings.holdings
+                ? unlockedForSymbol(loopHoldings.holdings, buy)
+                : null;
+              const overLoop =
+                payingFromLoop && loopUnlocked != null && exceedsAvailable(typedFill, loopUnlocked);
+              const overHelvex =
+                !payingFromLoop && buyAvail != null && exceedsAvailable(typedFill, buyAvail);
               return (
                 <article key={intent.intentId} className="solver-card">
                   <div className="solver-card-main">
@@ -352,15 +421,24 @@ export default function SolverPage() {
                         : `Maker ${intent.makerParty.slice(0, 22)}…`}
                       <span className="solver-card-sep">·</span>
                       {intent.intentId.slice(0, 8)}…
+                      {intent.deadline ? (
+                        <>
+                          <span className="solver-card-sep">·</span>
+                          <DeadlineLabel iso={intent.deadline} />
+                        </>
+                      ) : null}
                     </p>
-                    {payFrom === "loop" ? (
+                    {payingFromLoop ? (
                       <p className="solver-maker">
-                        Fill amount is taken from Loop, then accepted on Helvex
+                        Loop available:{" "}
+                        <strong>
+                          {loopUnlocked == null ? "…" : formatAmount(loopUnlocked)} {buy}
+                        </strong>
                       </p>
                     ) : (
                       buyAvail != null && (
                         <p className="solver-maker">
-                          Your {buy} available: <strong>{formatAmount(buyAvail)}</strong>
+                          Helvex available: <strong>{formatAmount(buyAvail)} {buy}</strong>
                         </p>
                       )
                     )}
@@ -383,13 +461,20 @@ export default function SolverPage() {
                     <button
                       type="button"
                       className="btn btn-primary btn-sm btn-glow"
-                      onClick={() => void fill(intent)}
+                      onClick={() => requestFill(intent)}
                       disabled={
                         loadingId === intent.intentId ||
                         !solver ||
                         (payFrom === "loop" &&
                           isLoopWalletEnabled() &&
-                          walletStatus !== "connected")
+                          walletStatus !== "connected") ||
+                        (payingFromLoop &&
+                          walletStatus === "connected" &&
+                          (loopHoldings.loading ||
+                            Boolean(loopHoldings.error) ||
+                            overLoop ||
+                            loopUnlocked == null)) ||
+                        overHelvex
                       }
                     >
                       {loadingId === intent.intentId ? (
@@ -409,6 +494,16 @@ export default function SolverPage() {
                         "Accept fill"
                       )}
                     </button>
+                    {overLoop && loopUnlocked != null && (
+                      <p className="solver-maker">
+                        Amount is above the Loop balance of {formatAmount(loopUnlocked)} {buy}.
+                      </p>
+                    )}
+                    {overHelvex && buyAvail != null && (
+                      <p className="solver-maker">
+                        Amount is above the Helvex balance of {formatAmount(buyAvail)} {buy}.
+                      </p>
+                    )}
                   </div>
                 </article>
               );
@@ -416,6 +511,35 @@ export default function SolverPage() {
           </div>
         )}
       </section>
+      <ConfirmDialog
+        open={pendingFill != null}
+        titleId="fill-confirm-title"
+        title="Confirm fill"
+        confirmLabel="Fill RFQ"
+        busy={pendingFill != null && loadingId === pendingFill.intentId}
+        onClose={() => {
+          if (!loadingId) setPendingFill(null);
+        }}
+        onConfirm={() => {
+          if (pendingFill) void fill(pendingFill);
+        }}
+      >
+        <p>Confirm that you want to fill this RFQ.</p>
+        <p>
+          Once confirmed,{" "}
+          <strong>
+            {pendingFill
+              ? `${formatAmount(
+                  /^\d+(\.\d+)?$/.test(buyAmount[pendingFill.intentId]?.trim() ?? "")
+                    ? buyAmount[pendingFill.intentId]!.trim()
+                    : pendingFill.minBuyAmount,
+                )} ${pendingFill.pair.split("_")[1] ?? ""}`
+              : ""}
+          </strong>{" "}
+          will be paid to settle this trade. You will receive the maker&apos;s locked{" "}
+          {pendingFill ? pendingFill.pair.split("_")[0] : "tokens"}. This fill cannot be undone.
+        </p>
+      </ConfirmDialog>
     </div>
   );
 }
