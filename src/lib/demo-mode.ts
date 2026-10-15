@@ -1,8 +1,10 @@
 /**
  * Demo presentation mode — masks PII / party IDs and brands as MainNet for recordings.
- * Enable with NEXT_PUBLIC_DEMO_MODE=true (restart Next.js after changing).
+ * Local only: `next dev` with NEXT_PUBLIC_DEMO_MODE=true (restart Next.js after changing).
+ * Production builds never mask, so a deployed app always shows the real party.
  */
 export function isDemoMode(): boolean {
+  if (process.env.NODE_ENV === "production") return false;
   return (process.env.NEXT_PUBLIC_DEMO_MODE ?? "").trim().toLowerCase() === "true";
 }
 
