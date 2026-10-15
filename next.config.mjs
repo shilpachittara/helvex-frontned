@@ -66,9 +66,10 @@ const nextConfig = {
           scriptSrc,
           "style-src 'self' 'unsafe-inline'",
           connectSrc,
-          // Loop Connect opens wallet UI (popup/tab) on cantonloop.com hosts.
-          "frame-src 'self' https://*.cantonloop.com https://cantonloop.com",
-          "child-src 'self' https://*.cantonloop.com https://cantonloop.com",
+          // Loop Connect opens the current wallet on looptech.io and the
+          // pre-migration wallet on cantonloop.com.
+          "frame-src 'self' https://*.cantonloop.com https://cantonloop.com https://*.looptech.io",
+          "child-src 'self' https://*.cantonloop.com https://cantonloop.com https://*.looptech.io",
           "frame-ancestors 'none'",
           "object-src 'none'",
           "base-uri 'self'",

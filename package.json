@@ -12,7 +12,7 @@
     "demo:video": "node scripts/demo-video.mjs"
   },
   "dependencies": {
-    "@fivenorth/loop-sdk": "^0.13.2",
+    "@fivenorth/loop-sdk": "0.15.1",
     "@intent-swap/domain": "file:./packages/domain",
     "@next/env": "^15.1.2",
     "next": "^15.1.2",

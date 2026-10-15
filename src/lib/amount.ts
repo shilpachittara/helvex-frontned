@@ -26,3 +26,43 @@ export function isValidAmount(raw: string): boolean {
 export function normalizeAmount(raw: string): string {
   return raw.trim();
 }
+
+/** Ledger decimal places Loop and the token registry will accept. */
+const TRANSFER_DECIMALS: Record<string, number> = {
+  CC: 10,
+  AMULET: 10,
+  CBTC: 10,
+  USDCX: 6,
+  USDCx: 6,
+  USDC: 6,
+};
+
+/**
+ * Amount string safe to hand to Loop.
+ *
+ * Postgres numeric(28,10) comes back padded (`11.3663200000`). USDCx rejects
+ * more than 6 decimal places, and Loop's prepare call then fails with an
+ * empty error. Trailing zeros are not a different value — drop them. Refuse
+ * a value that still has more places than the token allows.
+ */
+export function amountForTransfer(symbol: string, raw: string): string {
+  const trimmed = raw.trim();
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) {
+    throw new Error("Enter a valid amount greater than zero.");
+  }
+  const key = symbol.trim().toUpperCase();
+  const maxDecimals = TRANSFER_DECIMALS[key] ?? TRANSFER_DECIMALS[symbol.trim()] ?? 10;
+  const [whole, frac = ""] = trimmed.split(".");
+  const fracTrimmed = frac.replace(/0+$/, "");
+  if (fracTrimmed.length > maxDecimals) {
+    throw new Error(
+      `${key || symbol} only supports ${maxDecimals} decimal places.`,
+    );
+  }
+  const wholeNorm = whole.replace(/^0+(?=\d)/, "") || "0";
+  const amount = fracTrimmed ? `${wholeNorm}.${fracTrimmed}` : wholeNorm;
+  if (!(Number(amount) > 0)) {
+    throw new Error("Amount must be greater than zero.");
+  }
+  return amount;
+}

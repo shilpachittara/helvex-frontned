@@ -2,6 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   acceptPendingDeposits,
   createApiKey,
@@ -36,6 +37,28 @@ import { formatUtcDate, formatUtcDateTime } from "../../../lib/format-time";
 import { useWallet } from "../../../lib/wallet/WalletProvider";
 
 const INSTRUMENTS: Instrument[] = ["CC", "CBTC", "USDCX"];
+const CURRENCIES: { id: Instrument; label: string }[] = [
+  { id: "CC", label: "CC" },
+  { id: "CBTC", label: "CBTC" },
+  { id: "USDCX", label: "USDCx" },
+];
+
+function currencyLabel(instrument: Instrument): string {
+  return CURRENCIES.find((c) => c.id === instrument)?.label ?? instrument;
+}
+
+function balanceFor(balances: BalanceView[], instrument: Instrument): string {
+  const label = currencyLabel(instrument);
+  const match = balances.find(
+    (b) =>
+      b.symbol === instrument ||
+      b.symbol === label ||
+      b.instrument === instrument ||
+      b.instrument === label ||
+      (instrument === "CC" && (b.instrument === "Amulet" || b.symbol === "Amulet")),
+  );
+  return match?.available ?? "0";
+}
 const SCOPES: ApiKeyScope[] = ["read", "maker", "solver", "withdraw", "transfer"];
 
 function newIdempotencyKey(): string {
@@ -301,6 +324,7 @@ export default function AccountPage() {
             />
             <WithdrawPanel
               appParty={appParty}
+              balances={balances}
               destination={profile?.loopPartyId ?? profile?.cantonPartyId ?? null}
               connecting={walletStatus === "connecting"}
               onConnect={connectWallet}
@@ -612,6 +636,37 @@ function PendingInboundPanel({
   );
 }
 
+function CurrencyPicker({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: Instrument;
+  onChange: (next: Instrument) => void;
+}) {
+  return (
+    <div className="field">
+      <label id={`${id}-label`}>Currency</label>
+      <div className="currency-picker" role="radiogroup" aria-labelledby={`${id}-label`}>
+        {CURRENCIES.map((c) => (
+          <button
+            key={c.id}
+            id={value === c.id ? id : undefined}
+            type="button"
+            role="radio"
+            aria-checked={value === c.id}
+            className={`currency-chip${value === c.id ? " is-selected" : ""}`}
+            onClick={() => onChange(c.id)}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function DepositPanel({
   appParty,
   loopReady,
@@ -704,22 +759,9 @@ function DepositPanel({
         </div>
       </div>
       <div className="fund-ops-fields">
+        <CurrencyPicker id="dep-instrument" value={instrument} onChange={setInstrument} />
         <div className="field">
-          <label htmlFor="dep-instrument">Token</label>
-          <select
-            id="dep-instrument"
-            value={instrument}
-            onChange={(e) => setInstrument(e.target.value as Instrument)}
-          >
-            {INSTRUMENTS.map((i) => (
-              <option key={i} value={i}>
-                {i}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="dep-amount">Amount</label>
+          <label htmlFor="dep-amount">Amount ({currencyLabel(instrument)})</label>
           <input
             id="dep-amount"
             inputMode="decimal"
@@ -779,12 +821,14 @@ function DepositPanel({
 
 function WithdrawPanel({
   appParty,
+  balances,
   destination,
   connecting,
   onConnect,
   onDone,
 }: {
   appParty: string;
+  balances: BalanceView[];
   destination: string | null;
   connecting: boolean;
   onConnect: () => Promise<void>;
@@ -793,8 +837,11 @@ function WithdrawPanel({
   const [instrument, setInstrument] = useState<Instrument>("CC");
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const available = balanceFor(balances, instrument);
+  const label = currencyLabel(instrument);
 
-  async function submit() {
+  function openConfirm() {
     if (!isValidAmount(amount)) {
       onDone({ type: "error", text: "Enter a valid amount greater than zero." });
       return;
@@ -806,6 +853,11 @@ function WithdrawPanel({
       });
       return;
     }
+    setConfirming(true);
+  }
+
+  async function submit() {
+    if (!destination || !isValidAmount(amount)) return;
     setBusy(true);
     try {
       await requestWithdrawal(appParty, {
@@ -813,8 +865,12 @@ function WithdrawPanel({
         amount: normalizeAmount(amount),
         idempotencyKey: newIdempotencyKey(),
       });
-      onDone({ type: "success", text: "Withdrawal requested. Funds return to your Loop party." });
+      onDone({
+        type: "success",
+        text: `Withdrawal of ${normalizeAmount(amount)} ${label} requested. Funds return to your Loop wallet.`,
+      });
       setAmount("");
+      setConfirming(false);
     } catch (err) {
       onDone({
         type: "error",
@@ -838,22 +894,9 @@ function WithdrawPanel({
         </div>
       </div>
       <div className="fund-ops-fields">
+        <CurrencyPicker id="wd-instrument" value={instrument} onChange={setInstrument} />
         <div className="field">
-          <label htmlFor="wd-instrument">Token</label>
-          <select
-            id="wd-instrument"
-            value={instrument}
-            onChange={(e) => setInstrument(e.target.value as Instrument)}
-          >
-            {INSTRUMENTS.map((i) => (
-              <option key={i} value={i}>
-                {i}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="wd-amount">Amount</label>
+          <label htmlFor="wd-amount">Amount ({label})</label>
           <input
             id="wd-amount"
             inputMode="decimal"
@@ -862,13 +905,26 @@ function WithdrawPanel({
             placeholder="0.0"
             className="input-mono"
           />
+          <div className="fund-max-row">
+            <span>
+              Max available: {formatBalanceAmount(available, label)} {label}
+            </span>
+            <button
+              type="button"
+              className="fund-max-btn"
+              onClick={() => setAmount(available)}
+              disabled={busy}
+            >
+              Use max
+            </button>
+          </div>
         </div>
       </div>
       {destination ? (
         <button
           type="button"
           className="btn btn-primary fund-ops-btn"
-          onClick={submit}
+          onClick={openConfirm}
           disabled={busy || !isValidAmount(amount)}
         >
           {busy ? <span className="spinner" /> : "Request withdrawal"}
@@ -887,6 +943,54 @@ function WithdrawPanel({
         <span>To Loop (locked)</span>
         <code>{destination ? shortPartyId(destination) : "No linked Loop party yet"}</code>
       </p>
+      {confirming && destination &&
+        createPortal(
+          <div
+            className="fund-confirm-backdrop"
+            role="presentation"
+            onClick={() => {
+              if (!busy) setConfirming(false);
+            }}
+          >
+            <div
+              className="fund-confirm"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="wd-confirm-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 id="wd-confirm-title">Confirm withdrawal</h3>
+              <p>
+                Confirm that you want to withdraw{" "}
+                <strong>
+                  {normalizeAmount(amount)} {label}
+                </strong>
+                .
+              </p>
+              <p>This amount will be transferred to this Loop wallet address:</p>
+              <code className="fund-confirm-address">{destination}</code>
+              <div className="fund-confirm-actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setConfirming(false)}
+                  disabled={busy}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => void submit()}
+                  disabled={busy}
+                >
+                  {busy ? <span className="spinner" /> : "Confirm withdrawal"}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </section>
   );
 }

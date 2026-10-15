@@ -5,7 +5,7 @@ import {
   prepareDeposit,
   type Instrument,
 } from "./api";
-import { normalizeAmount } from "./amount";
+import { amountForTransfer } from "./amount";
 import type { BalanceView } from "./api";
 
 function availableForSymbol(balances: BalanceView[], symbol: string): string | null {
@@ -69,7 +69,7 @@ export async function fundFromLoop(opts: {
   onProgress?: (stage: FundFromLoopProgress) => void;
   timeoutMs?: number;
 }): Promise<void> {
-  const amount = normalizeAmount(opts.amount);
+  const amount = amountForTransfer(opts.symbol, opts.amount);
   const instrument = toDepositInstrument(opts.symbol);
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 

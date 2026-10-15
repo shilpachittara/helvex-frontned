@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, fetchWalletProfile } from "../../../lib/api";
 import { isDemoMode } from "../../../lib/demo-mode";
-import { normalizeAmount } from "../../../lib/amount";
+import { amountForTransfer, normalizeAmount } from "../../../lib/amount";
 import { formatAmount } from "../../../lib/format-amount";
 import type { PairId } from "@intent-swap/domain";
 import { PartyAccessBanner } from "../../../components/AccessGate";
@@ -149,26 +149,27 @@ export default function SolverPage() {
     setError(null);
     setNotice(null);
     try {
-      const buy = intent.pair.split("_")[1] ?? "USDCX";
-      if (useLoop) {
-        await fundFromLoop({
-          appParty: solver,
-          symbol: buy,
-          amount: normalizeAmount(amount),
-          transfer,
-          onProgress: setFundProgress,
-        });
-        await refreshBalances();
-      }
-      setFundProgress("filling");
-      await api("/v1/solver/fill", {
-        method: "POST",
-        body: JSON.stringify({
-          intentId: intent.intentId,
-          solver,
-          buyAmount: normalizeAmount(amount),
-        }),
+    const buy = intent.pair.split("_")[1] ?? "USDCX";
+    const buyAmount = amountForTransfer(buy, normalizeAmount(amount));
+    if (useLoop) {
+      await fundFromLoop({
+        appParty: solver,
+        symbol: buy,
+        amount: buyAmount,
+        transfer,
+        onProgress: setFundProgress,
       });
+      await refreshBalances();
+    }
+    setFundProgress("filling");
+    await api("/v1/solver/fill", {
+      method: "POST",
+      body: JSON.stringify({
+        intentId: intent.intentId,
+        solver,
+        buyAmount,
+      }),
+    });
       setIntents((prev) => prev.filter((i) => i.intentId !== intent.intentId));
       setNotice(`Fill accepted for ${intent.intentId.slice(0, 8)}… — it is now in Your fills.`);
       setSolverTab("fills");
