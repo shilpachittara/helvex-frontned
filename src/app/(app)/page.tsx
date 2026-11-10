@@ -297,8 +297,8 @@ export default function HomePage() {
     setMinBuyAmount(selectedPair.minBuy);
   }, [selectedPair]);
 
-  // Live quote: fetch an indicative price and use its `minReceive` as the
-  // signed intent's minBuyAmount (v1 firm quote). Debounced on amount/pair.
+  // Live quote: fetch an indicative price and pre-fill minBuyAmount from
+  // minReceive. The trader can edit that minimum before submit.
   useEffect(() => {
     if (!selectedPair) {
       setQuoteLoading(false);
@@ -518,14 +518,14 @@ export default function HomePage() {
     <div className="rfq-desk">
       <section className="hero-premium hero-compact">
         <div className="hero-premium-content">
-          <span className="hero-eyebrow">RFQ desk · Canton DvP</span>
+          <span className="hero-eyebrow">Trader-first RFQ · Canton Network</span>
           <h1>
-            Request a quote,
+            Set your minimum,
             <span className="hero-gradient"> lock & settle</span>
           </h1>
           <p>
-            Submit a signed RFQ. Pay from your Helvex trading balance or from Loop — Helvex locks
-            the sell leg; settlement is atomic DvP.
+            You set the minimum you&apos;ll receive. Solvers bid to meet or beat it. Helvex locks
+            the sell leg; settlement is atomic.
           </p>
         </div>
         <div className="hero-metrics">
@@ -685,7 +685,7 @@ export default function HomePage() {
 
             <div className="swap-leg swap-leg-premium">
               <div className="swap-leg-head">
-                <span className="swap-leg-label">Receive at least</span>
+                <span className="swap-leg-label">Minimum you'll receive</span>
                 {selectedPair && <TokenChip symbol={selectedPair.buy} />}
               </div>
               <input
@@ -694,12 +694,13 @@ export default function HomePage() {
                 value={minBuyAmount}
                 onChange={(e) => setMinBuyAmount(e.target.value)}
                 placeholder={selectedPair?.minBuy ?? "0"}
-                aria-label="Minimum buy amount"
+                aria-label="Minimum you'll receive"
                 className="swap-amount-input"
               />
               {selectedPair && (
                 <p className="field-hint">
-                  Minimum {formatAmount(selectedPair.minBuy)} {selectedPair.buy}
+                  Smallest allowed {formatAmount(selectedPair.minBuy)} {selectedPair.buy}. Solvers
+                  must meet or exceed this amount. A qualifying bid is not a guaranteed fill.
                 </p>
               )}
             </div>
@@ -792,6 +793,15 @@ export default function HomePage() {
               </strong>{" "}
               will be locked. You will not be able to move those funds unless you cancel this RFQ.
             </p>
+            <p>
+              Solvers must meet or exceed your minimum of{" "}
+              <strong>
+                {normalizeAmount(minBuyAmount)} {selectedPair?.buy ?? ""}
+              </strong>
+              . Helvex app fee is{" "}
+              {quote && quote.feeBps > 0 ? `${(quote.feeBps / 100).toFixed(2)}%` : "0 bps"}. Canton
+              network traffic in CC still applies.
+            </p>
           </ConfirmDialog>
           <ConfirmDialog
             open={pendingCancel != null}
@@ -865,15 +875,15 @@ export default function HomePage() {
                   </span>
                 </div>
                 <div className="swap-summary-row">
-                  <span>Your minimum</span>
+                  <span>Minimum you'll receive</span>
                   <span className="swap-summary-value">
                     {formatAmount(minBuyAmount || quote.minReceive)} {selectedPair.buy}
                   </span>
                 </div>
                 <div className="swap-summary-row">
-                  <span>Protocol fee</span>
+                  <span>Helvex app fee</span>
                   <span className="swap-summary-value">
-                    {quote.feeBps > 0 ? `${(quote.feeBps / 100).toFixed(2)}%` : "No fee"}
+                    {quote.feeBps > 0 ? `${(quote.feeBps / 100).toFixed(2)}%` : "0 bps"}
                   </span>
                 </div>
                 <div className="swap-summary-row">
@@ -886,8 +896,9 @@ export default function HomePage() {
                 {quote.withinLimits ? "" : " — out of range"}
               </p>
               <p className="field-hint">
-                Indicative · refresh before signing (valid ~{quote.ttlSeconds}s). Minimum is
-                enforced on-ledger.
+                Indicative · refresh before signing (valid ~{quote.ttlSeconds}s). Solvers must meet
+                or exceed your minimum. A qualifying bid is not a guaranteed fill. Canton network
+                traffic in CC still applies.
               </p>
             </div>
           ) : (
@@ -1013,7 +1024,7 @@ export default function HomePage() {
                           </>
                         ) : (
                           <>
-                            Sell {formatAmount(intent.sellAmount)} · Min{" "}
+                            Sell {formatAmount(intent.sellAmount)} · Minimum you'll receive{" "}
                             {formatAmount(intent.minBuyAmount)}
                             {intent.fillBuyAmount
                               ? ` · Filled ${formatAmount(intent.fillBuyAmount)}`

@@ -61,7 +61,8 @@ export function JsonLd() {
         description: SITE.description,
         featureList: [
           "Private RFQ swaps on Canton Network",
-          "Firm executable quotes",
+          "You set the minimum you'll receive",
+          "Solvers bid to meet or beat that minimum",
           "Atomic DvP settlement",
           "KYC-verified counterparties",
           "CC, CBTC, and USDCx markets",

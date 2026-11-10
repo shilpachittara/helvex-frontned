@@ -113,7 +113,9 @@ function LoginForm() {
               width={Math.round(40 * (1753 / 420))}
               className="brand-lockup brand-lockup-lg"
             />
-            <p className="login-brand-tagline">Institutional-grade RFQ on Canton Network</p>
+            <p className="login-brand-tagline">
+              Trader-first RFQ. You set the minimum you&apos;ll receive.
+            </p>
           </div>
           <ul className="login-features">
             <li>

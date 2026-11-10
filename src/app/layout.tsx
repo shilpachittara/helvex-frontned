@@ -105,7 +105,7 @@ export const metadata: Metadata = {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "Helvex — Private RFQ swaps on Canton Network",
+        alt: "Helvex — trader-first RFQ on Canton Network. You set the minimum you'll receive.",
       },
     ],
   },

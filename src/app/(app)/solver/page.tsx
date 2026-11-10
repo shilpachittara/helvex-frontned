@@ -250,8 +250,8 @@ export default function SolverPage() {
             <span className="hero-gradient"> atomically</span>
           </h1>
           <p>
-            Pay the buy leg from your Helvex balance or from Loop. After you accept, the RFQ moves
-            to <strong>Your fills</strong> and to activity on Create intent.
+            Your fill must meet or exceed the maker&apos;s minimum. A higher amount is not a
+            guaranteed fill. Pay the buy leg from your Helvex balance or from Loop.
           </p>
         </div>
       </section>
@@ -413,7 +413,7 @@ export default function SolverPage() {
                     <p className="solver-card-size">
                       Sell <strong>{formatAmount(intent.sellAmount)}</strong> {sell}
                       <span className="solver-card-sep">·</span>
-                      Min buy <strong>{formatAmount(intent.minBuyAmount)}</strong> {buy}
+                      Minimum you'll receive <strong>{formatAmount(intent.minBuyAmount)}</strong> {buy}
                     </p>
                     <p className="solver-maker">
                       {isDemoMode()
@@ -448,6 +448,9 @@ export default function SolverPage() {
                     <label className="section-label" htmlFor={`fill-${intent.intentId}`}>
                       Your fill ({buy})
                     </label>
+                    <p className="solver-maker">
+                      Must meet or exceed the minimum. A higher amount is not a guaranteed fill.
+                    </p>
                     <input
                       id={`fill-${intent.intentId}`}
                       className="solver-fill-input"
@@ -537,7 +540,13 @@ export default function SolverPage() {
               : ""}
           </strong>{" "}
           will be paid to settle this trade. You will receive the maker&apos;s locked{" "}
-          {pendingFill ? pendingFill.pair.split("_")[0] : "tokens"}. This fill cannot be undone.
+          {pendingFill ? pendingFill.pair.split("_")[0] : "tokens"}. This amount must meet or exceed
+          the maker&apos;s minimum
+          {pendingFill
+            ? ` of ${formatAmount(pendingFill.minBuyAmount)} ${pendingFill.pair.split("_")[1] ?? ""}`
+            : ""}
+          . Helvex app fee is 0 bps. Canton network traffic in CC still applies. This fill cannot be
+          undone.
         </p>
       </ConfirmDialog>
     </div>

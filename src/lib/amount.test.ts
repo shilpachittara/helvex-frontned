@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exceedsAvailable, isValidAmount, normalizeAmount, raisedSellAmount } from "./amount";
+import { amountForTransfer, exceedsAvailable, isValidAmount, normalizeAmount, raisedSellAmount } from "./amount";
 
 describe("isValidAmount", () => {
   it("accepts positive decimals", () => {
@@ -36,6 +36,21 @@ describe("normalizeAmount", () => {
   it("leaves the numeric value untouched", () => {
     expect(normalizeAmount(" 0.0003 ")).toBe("0.0003");
     expect(normalizeAmount("20.9157")).toBe("20.9157");
+  });
+});
+
+describe("amountForTransfer", () => {
+  it("drops numeric(28,10) padding so USDCx stays within 6 decimals", () => {
+    expect(amountForTransfer("USDCX", "11.3663200000")).toBe("11.36632");
+    expect(amountForTransfer("USDCx", "10.5391000000")).toBe("10.5391");
+  });
+
+  it("keeps CBTC precision and strips only trailing zeros", () => {
+    expect(amountForTransfer("CBTC", "0.0001400000")).toBe("0.00014");
+  });
+
+  it("rejects a USDCx amount that still has more than 6 decimal places", () => {
+    expect(() => amountForTransfer("USDCX", "1.1234567")).toThrow(/6 decimal places/);
   });
 });
 

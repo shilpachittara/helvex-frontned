@@ -355,7 +355,7 @@ export interface QuoteView {
   withinLimits: boolean;
 }
 
-/** Indicative price quote (v1: firm quote + instant settle). */
+/** Indicative price quote. minReceive is the suggested minimum the trader can edit. */
 export async function fetchQuote(pair: string, amount: string): Promise<QuoteView> {
   return api<QuoteView>(
     `/v1/quote?pair=${encodeURIComponent(pair)}&amount=${encodeURIComponent(amount)}`,

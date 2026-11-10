@@ -58,7 +58,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <footer className="app-footer">
         <div className="footer-inner">
-          <span>Permissioned RFQ · Atomic DvP</span>
+          <span>Trader-first RFQ · Atomic DvP</span>
           <span className="footer-sep">·</span>
           <span>CBTC / USDCx / CC</span>
           <span className="footer-sep">·</span>

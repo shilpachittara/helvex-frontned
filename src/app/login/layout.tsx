@@ -4,12 +4,12 @@ import type { ReactNode } from "react";
 export const metadata: Metadata = {
   title: "Sign in",
   description:
-    "Sign in to Helvex — the permissioned RFQ desk on Canton Network. KYC-approved users trade CC, CBTC, and USDCx with firm quotes and atomic settlement.",
+    "Sign in to Helvex — a permissioned, trader-first RFQ desk on Canton Network. You set the minimum you'll receive. Solvers bid to meet or beat it.",
   alternates: { canonical: "/login" },
   openGraph: {
     title: "Sign in to Helvex",
     description:
-      "KYC-gated RFQ trading on Canton Network. CC, CBTC, and USDCx with atomic DvP settlement.",
+      "KYC-gated trader-first RFQ on Canton Network. You set the minimum you'll receive. CC, CBTC, and USDCx settle atomically.",
     url: "/login",
   },
 };

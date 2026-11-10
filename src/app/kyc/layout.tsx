@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Request Helvex KYC access",
     description:
-      "Verify once, then trade on Helvex — permissioned RFQ desk for CC, CBTC, and USDCx on Canton MainNet.",
+      "Verify once, then trade on Helvex — a permissioned, trader-first RFQ desk. You set the minimum you'll receive.",
     url: "/kyc",
   },
 };

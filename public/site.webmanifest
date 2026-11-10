@@ -1,7 +1,7 @@
 {
-  "name": "Helvex — Canton Network RFQ Desk",
+  "name": "Helvex — Trader-first RFQ",
   "short_name": "Helvex",
-  "description": "Permissioned RFQ trading desk on Canton Network. Swap CC, CBTC, and USDCx with firm quotes and atomic settlement.",
+  "description": "Permissioned, trader-first RFQ on Canton Network. You set the minimum you'll receive. Solvers bid to meet or beat it.",
   "id": "/",
   "start_url": "/login",
   "scope": "/",

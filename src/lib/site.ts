@@ -13,11 +13,11 @@ export function siteOrigin(): string {
 
 export const SITE = {
   name: "Helvex",
-  brand: "Helvex — Canton Network RFQ Desk",
+  brand: "Helvex — Trader-first RFQ",
   shortDescription:
-    "Permissioned RFQ trading desk on Canton Network for CC, CBTC, and USDCx.",
+    "Permissioned, trader-first RFQ on Canton Network. You set the minimum you'll receive.",
   description:
-    "Helvex is the permissioned RFQ desk on Canton Network (a Dream Capital product). KYC-verified traders swap CC, CBTC, and USDCx with firm quotes and atomic DvP settlement. Loop wallet for deposit/withdraw; Helvex trading ID for lock, fill, and settle.",
+    "Helvex is a permissioned, trader-first RFQ desk on Canton Network (a Dream Capital product). You set the minimum you'll receive. Solvers bid to meet or beat it. A qualifying bid is not a guaranteed fill. KYC-verified traders swap CC, CBTC, and USDCx. Settlement is atomic. Loop is for deposit and withdraw.",
   marketingUrl: "https://helvex.cc",
   docsUrl: "https://helvex.gitbook.io/helvex-docs",
   twitter: "@Helvexcc",
